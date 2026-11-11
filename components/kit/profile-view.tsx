@@ -58,7 +58,23 @@ export function ProfileView({
           <Text style={styles.name}>{user.fullName || user.username}</Text>
           {user.isPremium && <ProBadge />}
         </View>
-        <Text style={styles.username}>@{user.username}</Text>
+        <Text style={styles.username}>
+          @{user.username}
+          {user.followsYou ? '  ·  Follows you' : ''}
+        </Text>
+        <View style={styles.followRow}>
+          <Pressable onPress={() => router.push({ pathname: '/follows/[userId]', params: { userId: String(user.id), tab: 'followers' } })} hitSlop={6}>
+            <Text style={styles.followText}>
+              <Text style={styles.followNum}>{user.followers ?? 0}</Text> {user.followers === 1 ? 'follower' : 'followers'}
+            </Text>
+          </Pressable>
+          <Text style={styles.followDot}>·</Text>
+          <Pressable onPress={() => router.push({ pathname: '/follows/[userId]', params: { userId: String(user.id), tab: 'following' } })} hitSlop={6}>
+            <Text style={styles.followText}>
+              <Text style={styles.followNum}>{user.following ?? 0}</Text> following
+            </Text>
+          </Pressable>
+        </View>
         {user.rating && (
           <View style={{ alignItems: 'center', marginTop: 6 }}>
             <Stars value={user.rating.avg} showValue count={user.rating.count} />
@@ -141,6 +157,10 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
   name: { fontSize: 24, fontWeight: '900', color: Brand.text, textAlign: 'center' },
   username: { fontSize: 14, color: Brand.muted, textAlign: 'center', marginTop: 2 },
+  followRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 8 },
+  followText: { color: Brand.muted, fontSize: 14 },
+  followNum: { color: Brand.text, fontWeight: '900' },
+  followDot: { color: Brand.faint },
   metaRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 14, marginTop: 10 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { color: Brand.textSoft, fontWeight: '600', fontSize: 13 },

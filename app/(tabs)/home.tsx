@@ -15,7 +15,8 @@ import { EventCard, ShareCard } from '@/components/kit/more-cards';
 import { FeaturedRideCard, RideCard } from '@/components/kit/ride-cards';
 import { Brand, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
-import { useUnreadCount } from '@/hooks/use-unread-count';
+import { useUnreadCount, useUnreadMessages } from '@/hooks/use-unread-count';
+import { getFeedApi } from '@/api/socialApi';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -29,24 +30,28 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const unread = useUnreadCount();
+  const unreadMessages = useUnreadMessages();
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [shares, setShares] = useState<PassengerRide[]>([]);
+  const [feed, setFeed] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchRides = useCallback(async () => {
     try {
-      const [r, e, s] = await Promise.all([
+      const [r, e, s, fd] = await Promise.all([
         getAllRidesApi(),
         getEventsApi({ upcoming: true }).catch(() => []),
         getPassengerRidesApi({ upcoming: true }).catch(() => []),
+        getFeedApi().then((f) => f.rides).catch(() => [] as Ride[]),
       ]);
       setRides(r);
       setEvents(e);
       setShares(s);
+      setFeed(fd);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -77,7 +82,8 @@ export default function HomeScreen() {
   const me = String(user?.id ?? '');
   const upcoming = useMemo(() => rides.filter((r) => !isPastRide(r)), [rides]);
   const featured = useMemo(
-    () => [...upcoming].sort((a, b) => b.participantsCount - a.participantsCount).slice(0, 6),
+    // Premium organizers are boosted to the front, then the most popular rides
+    () => [...upcoming].sort((a, b) => Number(!!b.creatorPremium) - Number(!!a.creatorPremium) || b.participantsCount - a.participantsCount).slice(0, 6),
     [upcoming]
   );
   const nextRide = useMemo(() => upcoming.find((r) => r.participants.includes(me)), [upcoming, me]);
@@ -104,6 +110,7 @@ export default function HomeScreen() {
             </View>
           </Pressable>
           <View style={{ flexDirection: 'row', gap: 10 }}>
+            <IconButton name="chatbubbles-outline" dark badge={unreadMessages} onPress={() => router.push('/messages')} />
             <IconButton name="notifications-outline" dark badge={unread} onPress={() => router.push('/HeaderScreens/notifications')} />
             <IconButton name="menu" dark onPress={() => router.push('/HeaderScreens/menu')} />
           </View>
@@ -167,6 +174,16 @@ export default function HomeScreen() {
               </View>
               <Ionicons name="chevron-forward" size={20} color="#fff" />
             </Pressable>
+          </>
+        )}
+
+        {/* From riders you follow */}
+        {feed.length > 0 && (
+          <>
+            <SectionTitle title="From riders you follow" />
+            {feed.slice(0, 3).map((ride) => (
+              <RideCard key={`f${ride.id}`} ride={ride} onPress={() => router.push(`/rideDetails/${ride.id}`)} />
+            ))}
           </>
         )}
 

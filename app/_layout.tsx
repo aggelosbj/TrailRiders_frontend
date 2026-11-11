@@ -30,7 +30,8 @@ function RootNavigator() {
   useEffect(() => {
     if (!ready) return;
     const inAuthArea = segments[0] === 'loginRegister';
-    if (!user && !inAuthArea) {
+    const isPublic = inAuthArea || segments[0] === 'legal'; // terms & privacy are readable before signing up
+    if (!user && !isPublic) {
       router.replace('/loginRegister/loginRegisterScreen');
     } else if (user && (inAuthArea || !segments[0])) {
       router.replace('/(tabs)/home');
@@ -56,6 +57,11 @@ function RootNavigator() {
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="editEvent/[id]" />
         <Stack.Screen name="premium" />
+        <Stack.Screen name="messages" />
+        <Stack.Screen name="chat/[userId]" />
+        <Stack.Screen name="follows/[userId]" />
+        <Stack.Screen name="legal/[doc]" />
+        <Stack.Screen name="HeaderScreens/blocked" />
         <Stack.Screen name="user/[id]" />
         <Stack.Screen name="HeaderScreens/notifications" />
         <Stack.Screen name="HeaderScreens/menu" />

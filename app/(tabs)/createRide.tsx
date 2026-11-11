@@ -1,13 +1,14 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorMessage } from '@/api/client';
 import { createEventApi, EventInput } from '@/api/eventsApi';
 import { createPassengerRideApi, PassengerRideInput } from '@/api/passengerRidesApi';
 import { createRideApi, RideInput } from '@/api/ridesApi';
-import { showMessage } from '@/components/kit/dialogs';
+import { confirmAction, showMessage } from '@/components/kit/dialogs';
 import { EventForm } from '@/components/kit/event-form';
 import { RideForm } from '@/components/kit/ride-form';
 import { Segmented } from '@/components/kit/segmented';
@@ -27,7 +28,7 @@ export default function CreateScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ type?: Kind }>();
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [kind, setKind] = useState<Kind>(params.type ?? 'ride');
   const [submitting, setSubmitting] = useState(false);
   const [formKey, setFormKey] = useState(0); // remount = clear the form after creating
@@ -46,7 +47,12 @@ export default function CreateScreen() {
       refreshUser();
       router.push(path as never);
     } catch (err) {
-      showMessage('Could not create', errorMessage(err));
+      const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      if (code === 'PREMIUM_LIMIT') {
+        if (await confirmAction('Hosting limit reached', errorMessage(err), 'See Premium')) router.push('/premium');
+      } else {
+        showMessage('Could not create', errorMessage(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -65,6 +71,15 @@ export default function CreateScreen() {
       >
         <Text style={styles.title}>{COPY[kind].title}</Text>
         <Text style={styles.subtitle}>{COPY[kind].subtitle}</Text>
+
+        {user && !user.isPremium && user.canHost === false && (
+          <Pressable style={styles.limit} onPress={() => router.push('/premium')}>
+            <Ionicons name="star" size={18} color="#B45309" />
+            <Text style={styles.limitText}>
+              You reached the free limit of {user.freeHostingLimit ?? 3} upcoming rides/events. Tap to get Premium for unlimited hosting.
+            </Text>
+          </Pressable>
+        )}
 
         <View style={{ marginBottom: 18 }}>
           <Segmented<Kind>
@@ -89,4 +104,6 @@ export default function CreateScreen() {
 const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '900', color: Brand.text },
   subtitle: { fontSize: 14, color: Brand.muted, marginTop: 2, marginBottom: 16 },
+  limit: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 14 },
+  limitText: { flex: 1, color: '#92400E', fontSize: 13, lineHeight: 18, fontWeight: '600' },
 });

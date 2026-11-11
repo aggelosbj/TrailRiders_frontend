@@ -12,7 +12,7 @@ import { FormField } from '@/components/kit/form';
 import { Brand } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
 
-type Errors = Partial<Record<'name' | 'userName' | 'email' | 'password' | 'confirm', string>>;
+type Errors = Partial<Record<'name' | 'userName' | 'email' | 'password' | 'confirm' | 'terms', string>>;
 
 export default function Register() {
   const router = useRouter();
@@ -26,6 +26,7 @@ export default function Register() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   const validate = () => {
     const e: Errors = {};
@@ -38,6 +39,7 @@ export default function Register() {
     else if (email.trim().length > 30) e.email = 'E-mail must be at most 30 characters';
     if (password.length < 6) e.password = 'At least 6 characters';
     if (confirmPassword !== password) e.confirm = 'Passwords do not match';
+    if (!accepted) e.terms = 'Please accept the Terms and Privacy Policy';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -47,7 +49,7 @@ export default function Register() {
     if (!validate()) return;
     setLoading(true);
     try {
-      await signupApi(userName.trim(), password, email.trim(), name.trim());
+      await signupApi(userName.trim(), password, email.trim(), name.trim(), true);
       setDone(true);
       // Log the new user in straight away
       await login(userName.trim(), password);
@@ -117,6 +119,16 @@ export default function Register() {
         onSubmitEditing={handleSignup}
       />
 
+      <Pressable style={styles.terms} onPress={() => setAccepted((a) => !a)}>
+        <Ionicons name={accepted ? 'checkbox' : 'square-outline'} size={22} color={errors.terms && !accepted ? Brand.danger : Brand.primary} />
+        <Text style={styles.termsText}>
+          I am 18+ and accept the{' '}
+          <Text style={styles.termsLink} onPress={() => router.push('/legal/terms')}>Terms of Service</Text> and{' '}
+          <Text style={styles.termsLink} onPress={() => router.push('/legal/privacy')}>Privacy Policy</Text>
+        </Text>
+      </Pressable>
+      {errors.terms && !accepted && <Text style={styles.termsError}>{errors.terms}</Text>}
+
       {serverError && (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{serverError}</Text>
@@ -137,6 +149,10 @@ export default function Register() {
 
 const styles = StyleSheet.create({
   link: { color: Brand.primary, fontWeight: '700', fontSize: 14 },
+  terms: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8, marginTop: -4 },
+  termsText: { flex: 1, color: Brand.textSoft, fontSize: 13, lineHeight: 20 },
+  termsLink: { color: Brand.primary, fontWeight: '700' },
+  termsError: { color: Brand.danger, fontSize: 12, marginBottom: 10, fontWeight: '500' },
   errorBox: { backgroundColor: Brand.dangerSoft, borderRadius: 10, padding: 12, marginBottom: 14 },
   errorText: { color: Brand.danger, fontWeight: '600', fontSize: 13 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 22, flexWrap: 'wrap' },

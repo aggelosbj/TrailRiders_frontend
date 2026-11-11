@@ -7,6 +7,7 @@ import { dateParts, formatDate, isPastRide, Ride } from '@/api/ridesApi';
 import { Brand, DIFFICULTY_COLORS, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { Button } from './button';
 import { RideCover } from './ride-cover';
+import { ProBadge } from './stars';
 
 export function DifficultyBadge({ difficulty }: { difficulty?: string }) {
   if (!difficulty) return null;
@@ -25,6 +26,11 @@ export function FeaturedRideCard({ ride, onPress }: { ride: Ride; onPress: () =>
     <Pressable onPress={onPress} style={({ pressed }) => [styles.featured, pressed && styles.pressed]}>
       <RideCover image={ride.image} rideType={ride.rideType} iconSize={150} />
       <LinearGradient colors={['rgba(0,20,40,0.05)', 'rgba(0,20,40,0.85)']} style={StyleSheet.absoluteFill} />
+      {ride.creatorPremium && (
+        <View style={styles.proCorner}>
+          <ProBadge />
+        </View>
+      )}
       <View style={styles.dateChip}>
         <Text style={styles.dateDay}>{day}</Text>
         <Text style={styles.dateMonth}>{month}</Text>
@@ -155,6 +161,7 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.navy,
     ...Shadow,
   },
+  proCorner: { position: 'absolute', top: 14, right: 14, zIndex: 2 },
   dateChip: {
     position: 'absolute',
     top: 14,

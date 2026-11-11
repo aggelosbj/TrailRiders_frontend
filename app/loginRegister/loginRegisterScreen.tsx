@@ -55,6 +55,11 @@ export default function LoginRegisterScreen() {
         </View>
 
         <GoogleButton />
+        <Text style={styles.legal}>
+          By continuing you agree to our{' '}
+          <Text style={styles.legalLink} onPress={() => router.push('/legal/terms')}>Terms</Text> and{' '}
+          <Text style={styles.legalLink} onPress={() => router.push('/legal/privacy')}>Privacy Policy</Text>.
+        </Text>
       </Animated.View>
     </LinearGradient>
   );
@@ -94,5 +99,7 @@ const styles = StyleSheet.create({
   registerBtn: { borderColor: '#fff', marginBottom: 6 },
   orRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 14 },
   line: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.3)' },
+  legal: { color: '#DCEFFF', fontSize: 12, textAlign: 'center', marginTop: 14, lineHeight: 18 },
+  legalLink: { color: '#fff', fontWeight: '800', textDecorationLine: 'underline' },
   orText: { color: '#DCEFFF', marginHorizontal: 12, fontWeight: '600' },
 });

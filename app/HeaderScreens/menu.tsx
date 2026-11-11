@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BASE_URL } from '@/api/client';
@@ -41,7 +41,9 @@ export default function MenuScreen() {
         <Group title="Account">
           <Item icon="person-outline" label="Edit profile" onPress={() => router.push('/HeaderScreens/editProfile')} />
           <Item icon="key-outline" label="Change password" onPress={() => router.push('/HeaderScreens/changePassword')} />
+          <Item icon="chatbubbles-outline" label="Messages" onPress={() => router.push('/messages')} />
           <Item icon="notifications-outline" label="Notifications" onPress={() => router.push('/HeaderScreens/notifications')} />
+          <Item icon="ban-outline" label="Blocked riders" onPress={() => router.push('/HeaderScreens/blocked')} />
           <Item icon="star-outline" label="TrailRiders Premium" value={user?.isPremium ? 'Active' : undefined} onPress={() => router.push('/premium')} />
         </Group>
 
@@ -54,6 +56,9 @@ export default function MenuScreen() {
 
         <Group title="About">
           <Item icon="information-circle-outline" label="About TrailRiders" onPress={() => router.push('/about')} />
+          <Item icon="document-text-outline" label="Terms of Service" onPress={() => router.push('/legal/terms')} />
+          <Item icon="shield-checkmark-outline" label="Privacy Policy" onPress={() => router.push('/legal/privacy')} />
+          <Item icon="mail-outline" label="Contact support" onPress={() => Linking.openURL('mailto:support@trailriders.gr?subject=TrailRiders%20support')} />
           <Item icon="server-outline" label="Server" value={BASE_URL.replace(/^https?:\/\//, '')} />
           <Item icon="phone-portrait-outline" label="Version" value={Constants.expoConfig?.version ?? '1.0.0'} />
         </Group>

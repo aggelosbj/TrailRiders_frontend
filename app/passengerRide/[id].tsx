@@ -19,6 +19,7 @@ import { Avatar } from '@/components/kit/avatar';
 import { Button } from '@/components/kit/button';
 import { confirmAction, showMessage } from '@/components/kit/dialogs';
 import { EmptyState, Loading } from '@/components/kit/layout';
+import { ReportSheet } from '@/components/kit/sheets';
 import { ProBadge } from '@/components/kit/stars';
 import { Brand, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
@@ -31,6 +32,7 @@ export default function PassengerRideScreen() {
   const [ride, setRide] = useState<PassengerRide | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [report, setReport] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -107,9 +109,13 @@ export default function PassengerRideScreen() {
             <Pressable style={styles.roundBtn} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))}>
               <Ionicons name="chevron-back" size={21} color="#fff" />
             </Pressable>
-            {isOwner && (
+            {isOwner ? (
               <Pressable style={styles.roundBtn} onPress={() => router.push(`/editPassengerRide/${ride.id}`)}>
                 <Ionicons name="create-outline" size={21} color="#fff" />
+              </Pressable>
+            ) : (
+              <Pressable style={styles.roundBtn} onPress={() => setReport(true)}>
+                <Ionicons name="flag-outline" size={20} color="#fff" />
               </Pressable>
             )}
           </View>
@@ -168,6 +174,9 @@ export default function PassengerRideScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={Brand.faint} />
             </View>
+            {!isOwner && (
+              <Button title="Message driver" icon="chatbubble-outline" variant="soft" small onPress={() => router.push(`/chat/${ride.creatorId}`)} style={{ marginTop: 12 }} />
+            )}
           </Pressable>
 
           {!!ride.description && (
@@ -235,6 +244,7 @@ export default function PassengerRideScreen() {
           />
         )}
       </View>
+      <ReportSheet visible={report} onClose={() => setReport(false)} targetType="passengerRide" targetId={ride.id} subject="trip" />
     </View>
   );
 }

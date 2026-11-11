@@ -33,6 +33,8 @@ export interface Ride {
   endLng?: number | null;
   participants: string[];
   participantsCount: number;
+  /** organizer has Premium (boosted in lists) */
+  creatorPremium?: boolean;
   participantsInfo?: RideUser[];
   creator?: RideUser | null;
   ratings?: Rating[];

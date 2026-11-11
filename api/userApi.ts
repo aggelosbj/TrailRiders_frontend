@@ -25,9 +25,19 @@ export interface User {
   stats?: UserStats;
   isPremium?: boolean;
   rating?: { avg: number; count: number } | null;
+  followers?: number;
+  following?: number;
+  /** only when viewing someone else's profile while logged in */
+  isFollowing?: boolean;
+  followsYou?: boolean;
+  isBlocked?: boolean;
+  blockedYou?: boolean;
+  /** only on /api/me */
+  canHost?: boolean;
+  freeHostingLimit?: number;
 }
 
-export type ProfileInput = Partial<Omit<User, 'id' | 'username' | 'stats' | 'isPremium' | 'rating'>>;
+export type ProfileInput = Partial<Omit<User, 'id' | 'username' | 'stats' | 'isPremium' | 'rating' | 'followers' | 'following' | 'isFollowing' | 'followsYou' | 'isBlocked' | 'blockedYou' | 'canHost' | 'freeHostingLimit'>>;
 
 export async function getMeApi(): Promise<User> {
   const res = await api.get('/api/me');

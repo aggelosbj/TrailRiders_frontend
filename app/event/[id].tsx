@@ -13,6 +13,7 @@ import { Button } from '@/components/kit/button';
 import { confirmAction, showMessage } from '@/components/kit/dialogs';
 import { EmptyState, Loading } from '@/components/kit/layout';
 import { RideCover } from '@/components/kit/ride-cover';
+import { ActionSheet, ReportSheet } from '@/components/kit/sheets';
 import { ProBadge } from '@/components/kit/stars';
 import { Brand, Radius, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
@@ -25,6 +26,8 @@ export default function EventScreen() {
   const [event, setEvent] = useState<EventItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [report, setReport] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -113,6 +116,11 @@ export default function EventScreen() {
               <Pressable style={styles.roundBtn} onPress={share}>
                 <Ionicons name="share-social-outline" size={21} color="#fff" />
               </Pressable>
+              {!isOwner && (
+                <Pressable style={styles.roundBtn} onPress={() => setMenu(true)}>
+                  <Ionicons name="ellipsis-horizontal" size={21} color="#fff" />
+                </Pressable>
+              )}
               {isOwner && (
                 <Pressable style={styles.roundBtn} onPress={() => router.push(`/editEvent/${event.id}`)}>
                   <Ionicons name="create-outline" size={21} color="#fff" />
@@ -233,6 +241,19 @@ export default function EventScreen() {
           <Button title="I'm going" icon="checkmark-circle-outline" onPress={() => rsvp(true)} loading={busy} style={{ flex: 1 }} />
         )}
       </View>
+
+      <ActionSheet
+        visible={menu}
+        onClose={() => setMenu(false)}
+        title={event.name}
+        actions={[
+          ...(event.ownerId && !event.isCompany
+            ? [{ label: 'Message organizer', icon: 'chatbubble-outline' as const, onPress: () => router.push(`/chat/${Number(event.ownerId)}`) }]
+            : []),
+          { label: 'Report event', icon: 'flag-outline', destructive: true, onPress: () => setReport(true) },
+        ]}
+      />
+      <ReportSheet visible={report} onClose={() => setReport(false)} targetType="event" targetId={event.id} subject="event" />
     </View>
   );
 }

@@ -41,6 +41,7 @@ import { confirmAction, showMessage } from '@/components/kit/dialogs';
 import { EmptyState, Loading } from '@/components/kit/layout';
 import { DifficultyBadge } from '@/components/kit/ride-cards';
 import { ProBadge, StarInput, Stars } from '@/components/kit/stars';
+import { ActionSheet, ReportSheet } from '@/components/kit/sheets';
 import { RideCover } from '@/components/kit/ride-cover';
 import { Brand, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
@@ -60,6 +61,8 @@ export default function RideDetailsScreen() {
   const [myRating, setMyRating] = useState(0);
   const [review, setReview] = useState('');
   const [rating, setRating] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ type: 'ride' | 'comment'; id: number; subject: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -207,6 +210,7 @@ export default function RideDetailsScreen() {
             <RoundBtn icon="chevron-back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))} />
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <RoundBtn icon="share-social-outline" onPress={handleShare} />
+              {!isOwner && <RoundBtn icon="ellipsis-horizontal" onPress={() => setMenu(true)} />}
               {isOwner && <RoundBtn icon="create-outline" onPress={() => router.push(`/editRide/${ride.id}`)} />}
             </View>
           </View>
@@ -368,11 +372,18 @@ export default function RideDetailsScreen() {
                     <Text style={styles.commentTime}>{timeAgo(c.createdAt)}</Text>
                   </View>
                   <Text style={styles.commentText}>{c.text}</Text>
-                  {(c.userId === user?.id || isOwner) && (
-                    <Pressable onPress={() => removeComment(c)} style={{ alignSelf: 'flex-end', marginTop: 4 }} hitSlop={6}>
-                      <Text style={{ color: Brand.faint, fontSize: 12, fontWeight: '600' }}>Delete</Text>
-                    </Pressable>
-                  )}
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 14, marginTop: 4 }}>
+                    {c.userId !== user?.id && (
+                      <Pressable onPress={() => setReportTarget({ type: 'comment', id: c.id, subject: 'comment' })} hitSlop={6}>
+                        <Text style={{ color: Brand.faint, fontSize: 12, fontWeight: '600' }}>Report</Text>
+                      </Pressable>
+                    )}
+                    {(c.userId === user?.id || isOwner) && (
+                      <Pressable onPress={() => removeComment(c)} hitSlop={6}>
+                        <Text style={{ color: Brand.faint, fontSize: 12, fontWeight: '600' }}>Delete</Text>
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
               </View>
             ))}
@@ -417,6 +428,18 @@ export default function RideDetailsScreen() {
           <Button title="Join this ride" icon="add-circle-outline" onPress={handleJoin} loading={busy} style={{ flex: 1 }} />
         )}
       </View>
+      <ActionSheet
+        visible={menu}
+        onClose={() => setMenu(false)}
+        title={ride.title}
+        actions={[
+          { label: 'Message organizer', icon: 'chatbubble-outline', onPress: () => router.push(`/chat/${ride.creatorId}`) },
+          { label: 'Report ride', icon: 'flag-outline', destructive: true, onPress: () => setReportTarget({ type: 'ride', id: ride.id, subject: 'ride' }) },
+        ]}
+      />
+      {reportTarget && (
+        <ReportSheet visible onClose={() => setReportTarget(null)} targetType={reportTarget.type} targetId={reportTarget.id} subject={reportTarget.subject} />
+      )}
     </KeyboardAvoidingView>
   );
 }

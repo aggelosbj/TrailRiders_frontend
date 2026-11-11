@@ -21,8 +21,8 @@ export async function googleLoginApi(idToken: string): Promise<LoginResponse> {
 }
 
 // ---------- SIGNUP ----------
-export async function signupApi(username: string, pwd: string, email?: string, fullName?: string) {
-  const res = await api.post('/auth/signup', { username, pwd, email, fullName });
+export async function signupApi(username: string, pwd: string, email?: string, fullName?: string, acceptTerms = false) {
+  const res = await api.post('/auth/signup', { username, pwd, email, fullName, acceptTerms });
   return res.data;
 }
 
