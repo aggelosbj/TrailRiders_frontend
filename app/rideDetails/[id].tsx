@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -19,6 +19,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorMessage } from '@/api/client';
 import {
+  cleanAccessCode,
+  isLockedRide,
+  isPrivateRide,
+  joinRideWithCodeApi,
+  regenerateRideCodeApi,
+  rideAccessCode,
+} from '@/api/rideAccessApi';
+import {
   addCommentApi,
   Comment,
   deleteCommentApi,
@@ -35,11 +43,13 @@ import {
   timeAgo,
   todayISO,
 } from '@/api/ridesApi';
+import { AppMap } from '@/components/kit/app-map';
 import { Avatar } from '@/components/kit/avatar';
 import { Button } from '@/components/kit/button';
 import { confirmAction, showMessage } from '@/components/kit/dialogs';
 import { EmptyState, Loading } from '@/components/kit/layout';
-import { DifficultyBadge } from '@/components/kit/ride-cards';
+import type { MapLine, MapMarker } from '@/components/kit/map-types';
+import { DifficultyBadge, PRIVATE_COLOR, PRIVATE_SOFT, PrivateBadge } from '@/components/kit/ride-cards';
 import { ProBadge, StarInput, Stars } from '@/components/kit/stars';
 import { ActionSheet, ReportSheet } from '@/components/kit/sheets';
 import { RideCover } from '@/components/kit/ride-cover';
@@ -47,7 +57,8 @@ import { Brand, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
 
 export default function RideDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `code=1` (from Explore's "Enter code" button) focuses the access-code field
+  const { id, code: focusCode } = useLocalSearchParams<{ id: string; code?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
@@ -63,6 +74,27 @@ export default function RideDetailsScreen() {
   const [rating, setRating] = useState(false);
   const [menu, setMenu] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ type: 'ride' | 'comment'; id: number; subject: string } | null>(null);
+  const [codeInput, setCodeInput] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+
+  // Map: start / finish pins + a faint straight connection (memoised so typing doesn't re-fit the map)
+  const startLat = ride?.startLat;
+  const startLng = ride?.startLng;
+  const endLat = ride?.endLat;
+  const endLng = ride?.endLng;
+  const startName = ride?.startLocation;
+  const finishName = ride?.finishLocation;
+  const mapData = useMemo(() => {
+    const markers: MapMarker[] = [];
+    const lines: MapLine[] = [];
+    const start = startLat != null && startLng != null ? { latitude: Number(startLat), longitude: Number(startLng) } : null;
+    const end = endLat != null && endLng != null ? { latitude: Number(endLat), longitude: Number(endLng) } : null;
+    if (start) markers.push({ id: 'start', coordinate: start, title: 'Start', subtitle: startName, color: Brand.success, label: 'S' });
+    if (end) markers.push({ id: 'finish', coordinate: end, title: 'Finish', subtitle: finishName, color: Brand.danger, label: 'F' });
+    if (start && end) lines.push({ id: 'link', coordinates: [start, end], color: 'rgba(29,161,250,0.45)', width: 3 });
+    return markers.length ? { markers, lines } : null;
+  }, [startLat, startLng, endLat, endLng, startName, finishName]);
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +128,10 @@ export default function RideDetailsScreen() {
   const isOwner = ride.creatorId === user?.id;
   const joined = ride.participants.includes(me);
   const past = isPastRide(ride);
+  const priv = isPrivateRide(ride);
+  // private ride you are not part of: details hidden until you join with the code
+  const locked = isLockedRide(ride) && !isOwner && !joined;
+  const ownerCode = isOwner && priv ? rideAccessCode(ride) : null;
   const typeIcon = (RIDE_TYPE_ICONS[ride.rideType ?? ''] ?? 'bicycle') as keyof typeof Ionicons.glyphMap;
 
   const run = async (fn: () => Promise<unknown>, success?: string) => {
@@ -112,7 +148,28 @@ export default function RideDetailsScreen() {
     }
   };
 
-  const handleJoin = () => run(() => joinRideApi(ride.id), `You joined "${ride.title}" 🏍️`);
+  const joinWithCode = async () => {
+    const code = cleanAccessCode(codeInput);
+    if (code.length < 4) {
+      setCodeError('Enter the 6-character code you got from the organizer.');
+      return;
+    }
+    setCodeError(null);
+    setBusy(true);
+    try {
+      await joinRideWithCodeApi(ride.id, code);
+      setCodeInput('');
+      await load();
+      refreshUser();
+      showMessage(`You joined "${ride.title}" 🏍️`);
+    } catch (err) {
+      setCodeError(errorMessage(err, 'Could not join this ride.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleJoin = () => (locked ? joinWithCode() : run(() => joinRideApi(ride.id), `You joined "${ride.title}" 🏍️`));
 
   const handleLeave = async () => {
     if (await confirmAction('Leave ride?', `You will be removed from "${ride.title}".`, 'Leave', true)) {
@@ -134,21 +191,71 @@ export default function RideDetailsScreen() {
     }
   };
 
-  const handleShare = async () => {
-    const text = `🏍️ ${ride.title}\n📅 ${formatDate(ride.date)}${ride.rideTime ? ' · ' + ride.rideTime : ''}\n📍 ${ride.startLocation} → ${ride.finishLocation}\n\nJoin me on TrailRiders!`;
+  const shareText = async (text: string, copiedMessage = 'Ride details copied to the clipboard.') => {
     try {
       if (Platform.OS === 'web') {
         const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
         if (nav.share) await nav.share({ text });
         else {
           await navigator.clipboard.writeText(text);
-          showMessage('Copied!', 'Ride details copied to the clipboard.');
+          showMessage('Copied!', copiedMessage);
         }
       } else {
         await Share.share({ message: text });
       }
     } catch {
       // user cancelled
+    }
+  };
+
+  const handleShare = () =>
+    shareText(
+      `🏍️ ${ride.title}\n📅 ${formatDate(ride.date)}${ride.rideTime ? ' · ' + ride.rideTime : ''}\n📍 ${ride.startLocation} → ${ride.finishLocation}\n\n` +
+        (priv ? 'Private ride — ask the organizer for the access code.' : 'Join me on TrailRiders!')
+    );
+
+  const copyCode = async () => {
+    if (!ownerCode) return;
+    if (Platform.OS === 'web' && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(ownerCode);
+        showMessage('Copied!', `Access code ${ownerCode} copied to the clipboard.`);
+        return;
+      } catch {
+        // fall through to the share sheet
+      }
+    }
+    // no clipboard module on native: the share sheet has a "Copy" action
+    shareText(ownerCode, `Access code ${ownerCode} copied to the clipboard.`);
+  };
+
+  const shareCode = () => {
+    if (!ownerCode) return;
+    shareText(
+      `🔒 You're invited to a private ride on TrailRiders: "${ride.title}"\n📅 ${formatDate(ride.date)}${ride.rideTime ? ' · ' + ride.rideTime : ''}\n\n` +
+        `Access code: ${ownerCode}\nOpen the ride in the app (Explore → Rides) and enter the code to join.`,
+      'Invitation with the access code copied to the clipboard.'
+    );
+  };
+
+  const regenerateCode = async () => {
+    if (
+      !(await confirmAction(
+        'Create a new code?',
+        'The current code will stop working. Riders who already joined stay in the ride.',
+        'New code'
+      ))
+    )
+      return;
+    setRegenerating(true);
+    try {
+      const { accessCode } = await regenerateRideCodeApi(ride.id);
+      setRide((r) => (r ? ({ ...r, accessCode } as Ride) : r));
+      showMessage('New access code', `Share ${accessCode} with the riders you invite.`);
+    } catch (err) {
+      showMessage('Could not change the code', errorMessage(err));
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -226,6 +333,7 @@ export default function RideDetailsScreen() {
                   <Text style={styles.heroTagText}>Completed</Text>
                 </View>
               )}
+              {priv && <PrivateBadge locked={locked} light />}
             </View>
             <Text style={styles.heroTitle}>{ride.title}</Text>
           </View>
@@ -235,7 +343,7 @@ export default function RideDetailsScreen() {
           {/* Quick facts */}
           <View style={styles.facts}>
             <Fact icon="calendar" label={ride.date ? ride.date.slice(0, 4) : 'Date'} value={formatDate(ride.date, false).replace(/ \d{4}$/, '')} />
-            <Fact icon="time" label="Meet at" value={ride.rideTime || '—'} />
+            <Fact icon="time" label="Meet at" value={locked ? 'Hidden' : ride.rideTime || '—'} />
             <Fact icon="speedometer" label="Distance" value={ride.rideDistance ? `${ride.rideDistance} km` : '—'} />
             <Fact icon="hourglass" label="Duration" value={ride.expectedTime || '—'} />
           </View>
@@ -251,6 +359,66 @@ export default function RideDetailsScreen() {
               <Text style={styles.typeTagText}>{ride.participantsCount} {ride.participantsCount === 1 ? 'rider' : 'riders'}</Text>
             </View>
           </View>
+
+          {/* Access code (organizer of a private ride) */}
+          {isOwner && priv && (
+            <View style={[styles.card, styles.codeCard]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <Ionicons name="key" size={18} color={PRIVATE_COLOR} />
+                <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Access code</Text>
+              </View>
+              <Text style={styles.small}>Riders need this code to see the details and join your private ride.</Text>
+              <Text style={styles.codeText} selectable accessibilityLabel={`Access code ${ownerCode ?? ''}`}>
+                {ownerCode ?? '— — —'}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Button title="Copy" icon="copy-outline" variant="soft" small onPress={copyCode} disabled={!ownerCode} style={{ flex: 1 }} />
+                <Button title="Share" icon="share-social-outline" variant="soft" small onPress={shareCode} disabled={!ownerCode} style={{ flex: 1 }} />
+                <Button title="New code" icon="refresh" variant="outline" small onPress={regenerateCode} loading={regenerating} style={{ flex: 1.1 }} />
+              </View>
+            </View>
+          )}
+
+          {/* Locked private ride: enter the code */}
+          {locked && (
+            <View style={[styles.card, styles.lockCard]}>
+              <View style={styles.lockIcon}>
+                <Ionicons name="lock-closed" size={26} color={PRIVATE_COLOR} />
+              </View>
+              <Text style={styles.lockTitle}>Private ride — code required</Text>
+              <Text style={styles.lockText}>
+                The organizer shares an access code with invited riders. Enter it to join and see the meeting time, stops, riders and discussion.
+              </Text>
+              {past ? (
+                <Text style={[styles.lockText, { fontWeight: '700', marginTop: 4 }]}>This ride has already taken place.</Text>
+              ) : (
+                <>
+                  <TextInput
+                    value={codeInput}
+                    onChangeText={(v) => {
+                      setCodeInput(v.toUpperCase());
+                      if (codeError) setCodeError(null);
+                    }}
+                    placeholder="ABC123"
+                    placeholderTextColor={Brand.faint}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    autoFocus={focusCode === '1'}
+                    maxLength={12}
+                    style={[styles.codeInput, !!codeError && { borderColor: Brand.danger }]}
+                    onSubmitEditing={joinWithCode}
+                    returnKeyType="go"
+                    accessibilityLabel="Access code"
+                  />
+                  {!!codeError && <Text style={styles.codeError}>{codeError}</Text>}
+                  <Button title="Join with code" icon="key-outline" onPress={joinWithCode} loading={busy} style={{ alignSelf: 'stretch', marginTop: 12 }} />
+                  <Pressable onPress={() => router.push(`/chat/${ride.creatorId}`)} hitSlop={6} style={{ marginTop: 12 }}>
+                    <Text style={styles.lockLink}>No code? Message the organizer</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
 
           {/* Organizer */}
           <Pressable style={styles.card} onPress={() => router.push(`/user/${ride.creatorId}`)}>
@@ -271,6 +439,9 @@ export default function RideDetailsScreen() {
           {/* Route */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Route</Text>
+            {mapData && (
+              <AppMap markers={mapData.markers} lines={mapData.lines} height={180} interactive={false} style={{ marginBottom: 14 }} />
+            )}
             {route.map((place, i) => {
               const first = i === 0;
               const last = i === route.length - 1;
@@ -287,6 +458,7 @@ export default function RideDetailsScreen() {
                 </View>
               );
             })}
+            {locked && <Text style={[styles.small, { marginTop: 10 }]}>🔒 Stops and the meeting time are visible after you join.</Text>}
             <Button title="Open in Google Maps" icon="navigate-outline" variant="soft" small onPress={() => Linking.openURL(mapsUrl(ride))} style={{ marginTop: 14 }} />
           </View>
 
@@ -299,6 +471,7 @@ export default function RideDetailsScreen() {
           )}
 
           {/* Participants */}
+          {!locked && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Riders ({ride.participantsCount})</Text>
             {(ride.participantsInfo ?? []).map((p) => (
@@ -319,9 +492,10 @@ export default function RideDetailsScreen() {
               </Pressable>
             ))}
           </View>
+          )}
 
           {/* Ratings */}
-          {(canRate || past || (ride.ratingsCount ?? 0) > 0) && (
+          {!locked && (canRate || past || (ride.ratingsCount ?? 0) > 0) && (
             <View style={styles.card}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Ratings</Text>
@@ -360,6 +534,7 @@ export default function RideDetailsScreen() {
           )}
 
           {/* Comments */}
+          {!locked && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Discussion ({comments.length})</Text>
             {comments.length === 0 && <Text style={styles.small}>No comments yet — ask a question or say hi 👋</Text>}
@@ -402,6 +577,7 @@ export default function RideDetailsScreen() {
               </Pressable>
             </View>
           </View>
+          )}
         </View>
       </ScrollView>
 
@@ -424,6 +600,8 @@ export default function RideDetailsScreen() {
           <View style={[styles.joinedBox, { justifyContent: 'center' }]}>
             <Text style={styles.joinedText}>This ride has finished</Text>
           </View>
+        ) : locked ? (
+          <Button title="Join with code" icon="lock-closed-outline" onPress={handleJoin} loading={busy} style={{ flex: 1 }} />
         ) : (
           <Button title="Join this ride" icon="add-circle-outline" onPress={handleJoin} loading={busy} style={{ flex: 1 }} />
         )}
@@ -530,4 +708,35 @@ const styles = StyleSheet.create({
   joinedText: { color: Brand.success, fontWeight: '800', fontSize: 15 },
   rateBox: { alignItems: 'center', backgroundColor: '#FFFBEB', borderRadius: Radius.md, padding: 14, marginBottom: 14 },
   rateTitle: { fontWeight: '800', color: Brand.text, marginBottom: 8, fontSize: 15 },
+  codeCard: { borderWidth: 1.5, borderColor: PRIVATE_SOFT },
+  codeText: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: 8,
+    color: PRIVATE_COLOR,
+    textAlign: 'center',
+    marginVertical: 14,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+  },
+  lockCard: { alignItems: 'center', borderWidth: 1.5, borderColor: PRIVATE_SOFT },
+  lockIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: PRIVATE_SOFT, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  lockTitle: { fontSize: 17, fontWeight: '900', color: Brand.text, textAlign: 'center' },
+  lockText: { fontSize: 14, color: Brand.muted, textAlign: 'center', lineHeight: 20, marginTop: 6 },
+  codeInput: {
+    alignSelf: 'stretch',
+    marginTop: 16,
+    borderWidth: 1.5,
+    borderColor: Brand.border,
+    borderRadius: Radius.md,
+    backgroundColor: Brand.input,
+    paddingVertical: 12,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 6,
+    textAlign: 'center',
+    color: Brand.text,
+    outlineStyle: 'none',
+  } as object,
+  codeError: { color: Brand.danger, fontWeight: '600', fontSize: 13, marginTop: 8, textAlign: 'center' },
+  lockLink: { color: Brand.primary, fontWeight: '700', fontSize: 13 },
 });

@@ -6,6 +6,7 @@ import { getMyRidesApi, isPastRide, Ride } from '@/api/ridesApi';
 import { Button } from '@/components/kit/button';
 import { IconButton, Loading } from '@/components/kit/layout';
 import { ProfileView } from '@/components/kit/profile-view';
+import { UserPosts } from '@/components/kit/user-posts';
 import { Brand } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
 
@@ -61,6 +62,9 @@ export default function ProfileScreen() {
           </View>
         }
       />
+      <View style={{ paddingHorizontal: 20 }}>
+        <UserPosts userId={user.id} />
+      </View>
     </ScrollView>
   );
 }

@@ -26,7 +26,7 @@ export default function TabsLayout() {
         tabBarButton: HapticTab,
         tabBarActiveTintColor: Brand.primary,
         tabBarInactiveTintColor: Brand.faint,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
         tabBarStyle: {
           height: 68 + insets.bottom,
           paddingTop: 6,
@@ -53,6 +53,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="feed" options={{ title: 'Feed', tabBarIcon: tabIcon('images', 'images-outline') }} />
       <Tabs.Screen name="myRides" options={{ title: 'My Rides', tabBarIcon: tabIcon('bicycle', 'bicycle-outline') }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: tabIcon('person-circle', 'person-circle-outline') }} />
     </Tabs>

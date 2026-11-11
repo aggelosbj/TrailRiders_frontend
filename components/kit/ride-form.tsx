@@ -1,13 +1,44 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import React, { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { RideFormData, RideVisibility, rideAccessCode } from '@/api/rideAccessApi';
 import { imageSource, Ride, RideInput } from '@/api/ridesApi';
 import { Brand, CATEGORIES, DIFFICULTIES, Radius, RIDE_TYPES, Shadow } from '@/constants/brand';
 import { Button } from './button';
 import { DateField, TimeField } from './date-time';
+import { showMessage } from './dialogs';
 import { ChipSelect, FormField } from './form';
 import { pickImage } from './image-picker';
+
+type Coords = { lat: number; lng: number };
+
+/** "Use my location": current position + a readable place name (native only; web gets coordinates) */
+async function currentPlace(): Promise<{ coords: Coords; name: string } | null> {
+  const perm = await Location.requestForegroundPermissionsAsync();
+  if (perm.status !== 'granted') {
+    showMessage('Location permission needed', 'Allow location access to use your current position as the start.');
+    return null;
+  }
+  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+  const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  let name = `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+  if (Platform.OS !== 'web') {
+    try {
+      const [a] = await Location.reverseGeocodeAsync({ latitude: coords.lat, longitude: coords.lng });
+      if (a) {
+        const first = a.name || [a.street, a.streetNumber].filter(Boolean).join(' ');
+        const parts = [first, a.city || a.district || a.subregion || a.region].filter(Boolean) as string[];
+        const unique = parts.filter((p, i) => parts.indexOf(p) === i);
+        if (unique.length) name = unique.join(', ').slice(0, 100);
+      }
+    } catch {
+      // keep the coordinates as the name
+    }
+  }
+  return { coords, name };
+}
 
 type Errors = Partial<Record<'title' | 'startLocation' | 'finishLocation' | 'date' | 'rideDistance', string>>;
 
@@ -20,6 +51,7 @@ export function RideForm({
   initial?: Partial<Ride>;
   submitLabel: string;
   submitting?: boolean;
+  /** receives RideInput + visibility and optional start coordinates (a RideFormData) */
   onSubmit: (data: RideInput) => void;
 }) {
   const [title, setTitle] = useState(initial?.title ?? '');
@@ -36,6 +68,40 @@ export function RideForm({
   const [expectedTime, setExpectedTime] = useState(initial?.expectedTime ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [errors, setErrors] = useState<Errors>({});
+  const initialVisibility = (initial as { visibility?: RideVisibility } | undefined)?.visibility;
+  const [visibility, setVisibility] = useState<RideVisibility>(initialVisibility === 'private' ? 'private' : 'public');
+  const [startCoords, setStartCoords] = useState<Coords | null>(
+    initial?.startLat != null && initial?.startLng != null ? { lat: initial.startLat, lng: initial.startLng } : null
+  );
+  const [coordsCleared, setCoordsCleared] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const currentCode = initial ? rideAccessCode(initial) : null;
+
+  const changeStart = (v: string) => {
+    setStart(v);
+    // typed a different place: let the server look it up again
+    if (startCoords) {
+      setStartCoords(null);
+      setCoordsCleared(true);
+    }
+  };
+
+  const useMyLocation = async () => {
+    setLocating(true);
+    try {
+      const place = await currentPlace();
+      if (place) {
+        setStart(place.name);
+        setStartCoords(place.coords);
+        setCoordsCleared(false);
+        setErrors((e) => ({ ...e, startLocation: undefined }));
+      }
+    } catch {
+      showMessage('Location unavailable', 'Could not get your position. Check that location services are on.');
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const submit = () => {
     const e: Errors = {};
@@ -47,7 +113,7 @@ export function RideForm({
     setErrors(e);
     if (Object.keys(e).length) return;
 
-    onSubmit({
+    const data: RideFormData = {
       title: title.trim(),
       image,
       category,
@@ -61,7 +127,10 @@ export function RideForm({
       rideDistance: rideDistance ? Number(rideDistance.replace(',', '.')) : null,
       expectedTime: expectedTime.trim() || undefined,
       description: description.trim(),
-    });
+      visibility,
+      ...(startCoords ? { startLat: startCoords.lat, startLng: startCoords.lng } : coordsCleared ? { startLat: null, startLng: null } : {}),
+    };
+    onSubmit(data);
   };
 
   return (
@@ -100,7 +169,31 @@ export function RideForm({
       </Section>
 
       <Section title="Route" icon="map-outline">
-        <FormField label="Start" icon="radio-button-on-outline" placeholder="e.g. Syntagma, Athens" value={startLocation} onChangeText={setStart} maxLength={100} error={errors.startLocation} />
+        <FormField label="Start" icon="radio-button-on-outline" placeholder="e.g. Syntagma, Athens" value={startLocation} onChangeText={changeStart} maxLength={100} error={errors.startLocation} />
+        <View style={styles.locRow}>
+          <Pressable style={styles.locBtn} onPress={useMyLocation} disabled={locating} hitSlop={6}>
+            {locating ? <ActivityIndicator size="small" color={Brand.primary} /> : <Ionicons name="locate" size={16} color={Brand.primary} />}
+            <Text style={styles.locBtnText}>{locating ? 'Locating…' : 'Use my location'}</Text>
+          </Pressable>
+          {startCoords && (
+            <View style={styles.coordChip}>
+              <Ionicons name="pin" size={12} color={Brand.success} />
+              <Text style={styles.coordText}>
+                {startCoords.lat.toFixed(4)}, {startCoords.lng.toFixed(4)}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setStartCoords(null);
+                  setCoordsCleared(true);
+                }}
+                hitSlop={8}
+                accessibilityLabel="Remove coordinates"
+              >
+                <Ionicons name="close" size={14} color={Brand.muted} />
+              </Pressable>
+            </View>
+          )}
+        </View>
 
         <Text style={styles.label}>Stops</Text>
         {stops.map((stop, i) => (
@@ -155,9 +248,63 @@ export function RideForm({
         />
       </Section>
 
-      {Object.keys(errors).length > 0 && <Text style={styles.formError}>Please fix the highlighted fields.</Text>}
+      <Section title="Visibility" icon="eye-outline">
+        <View style={styles.visRow}>
+          <VisibilityOption
+            active={visibility === 'public'}
+            icon="earth"
+            title="Public"
+            text="Anyone can see the details and join."
+            onPress={() => setVisibility('public')}
+          />
+          <VisibilityOption
+            active={visibility === 'private'}
+            icon="lock-closed"
+            title="Private"
+            text="Riders need your access code to see the details and join."
+            onPress={() => setVisibility('private')}
+          />
+        </View>
+        {visibility === 'private' && (
+          <View style={styles.visNote}>
+            <Ionicons name="key-outline" size={16} color={Brand.navy} />
+            <Text style={styles.visNoteText}>
+              {currentCode
+                ? `Current access code: ${currentCode}. You can copy, share or change it on the ride page.`
+                : 'A 6-character access code is created when you save. Share it with the riders you invite.'}
+            </Text>
+          </View>
+        )}
+      </Section>
+
+      {Object.values(errors).some(Boolean) && <Text style={styles.formError}>Please fix the highlighted fields.</Text>}
       <Button title={submitLabel} onPress={submit} loading={submitting} icon="checkmark-circle-outline" />
     </View>
+  );
+}
+
+function VisibilityOption({
+  active,
+  icon,
+  title,
+  text,
+  onPress,
+}: {
+  active: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  text: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={[styles.visOpt, active && styles.visOptActive]} accessibilityRole="radio" accessibilityState={{ selected: active }}>
+      <View style={styles.visHead}>
+        <Ionicons name={icon} size={18} color={active ? Brand.primary : Brand.muted} />
+        <Text style={[styles.visTitle, active && { color: Brand.primaryDark }]}>{title}</Text>
+        <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={18} color={active ? Brand.primary : Brand.faint} style={{ marginLeft: 'auto' }} />
+      </View>
+      <Text style={styles.visText}>{text}</Text>
+    </Pressable>
   );
 }
 
@@ -225,4 +372,25 @@ const styles = StyleSheet.create({
   addStopText: { color: Brand.primary, fontWeight: '700', marginLeft: 6 },
   row2: { flexDirection: 'row', gap: 12, width: '100%' },
   formError: { color: Brand.danger, fontWeight: '600', textAlign: 'center', marginBottom: 10 },
+  locRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: -8, marginBottom: 16 },
+  locBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  locBtnText: { color: Brand.primary, fontWeight: '700', fontSize: 13 },
+  coordChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Brand.successSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  coordText: { color: Brand.success, fontWeight: '700', fontSize: 12 },
+  visRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  visOpt: { flex: 1, minWidth: 0, borderWidth: 1.5, borderColor: Brand.border, borderRadius: Radius.md, padding: 12, backgroundColor: Brand.input },
+  visOptActive: { borderColor: Brand.primary, backgroundColor: Brand.primarySoft },
+  visHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  visTitle: { fontWeight: '800', fontSize: 15, color: Brand.text },
+  visText: { color: Brand.muted, fontSize: 12, lineHeight: 17 },
+  visNote: { flexDirection: 'row', gap: 8, backgroundColor: Brand.navySoft, borderRadius: Radius.md, padding: 12, marginBottom: 14 },
+  visNoteText: { flex: 1, color: Brand.navy, fontSize: 13, lineHeight: 18 },
 });

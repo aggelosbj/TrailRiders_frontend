@@ -38,7 +38,21 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "TrailRiders uses your location to record your rides, show rides near you and share your position in an emergency.",
+          "locationAlwaysAndWhenInUsePermission": "TrailRiders uses your location in the background to keep recording your ride while the screen is off.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "TrailRiders uses motion sensors to measure G-force and lean angle during your rides."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

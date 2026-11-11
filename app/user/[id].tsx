@@ -10,6 +10,7 @@ import { Button } from '@/components/kit/button';
 import { confirmAction, showMessage } from '@/components/kit/dialogs';
 import { EmptyState, IconButton, Loading, ScreenHeader } from '@/components/kit/layout';
 import { ProfileView } from '@/components/kit/profile-view';
+import { UserPosts } from '@/components/kit/user-posts';
 import { ActionSheet, ReportSheet } from '@/components/kit/sheets';
 import { Brand, Radius } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
@@ -115,6 +116,11 @@ export default function PublicProfileScreen() {
           )
         }
       />
+      {!hidden && (
+        <View style={{ paddingHorizontal: 20 }}>
+          <UserPosts userId={user.id} />
+        </View>
+      )}
 
       <ActionSheet
         visible={menu}

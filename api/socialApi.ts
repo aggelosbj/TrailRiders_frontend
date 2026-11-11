@@ -66,7 +66,7 @@ export async function getBlockedApi(): Promise<RideUser[]> {
   return (await api.get('/social/blocks')).data;
 }
 
-export type ReportTarget = 'user' | 'ride' | 'event' | 'passengerRide' | 'comment' | 'message';
+export type ReportTarget = 'user' | 'ride' | 'event' | 'passengerRide' | 'comment' | 'message' | 'post' | 'postComment' | 'listing' | 'route';
 export const REPORT_REASONS: { key: string; label: string }[] = [
   { key: 'spam', label: 'Spam or scam' },
   { key: 'harassment', label: 'Harassment or hate' },

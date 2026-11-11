@@ -1,22 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorMessage } from '@/api/client';
 import { EventItem, getEventsApi } from '@/api/eventsApi';
 import { getPassengerRidesApi, PassengerRide } from '@/api/passengerRidesApi';
-import { getAllRidesApi, isPastRide, joinRideApi, Ride } from '@/api/ridesApi';
+import { isLockedRide, isPrivateRide } from '@/api/rideAccessApi';
+import { formatDate, getAllRidesApi, isPastRide, joinRideApi, Ride } from '@/api/ridesApi';
+import { AppMap } from '@/components/kit/app-map';
 import { showMessage } from '@/components/kit/dialogs';
 import { EmptyState, Loading } from '@/components/kit/layout';
 import { EventCard, ShareCard } from '@/components/kit/more-cards';
-import { RideCard } from '@/components/kit/ride-cards';
+import type { MapMarker } from '@/components/kit/map-types';
+import { PRIVATE_COLOR, RideCard } from '@/components/kit/ride-cards';
 import { Segmented } from '@/components/kit/segmented';
 import { Brand, DIFFICULTIES, Radius, RIDE_TYPES, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
 
 type Tab = 'rides' | 'shares' | 'events';
+type ViewMode = 'list' | 'map';
 type Item = { kind: 'ride'; data: Ride } | { kind: 'share'; data: PassengerRide } | { kind: 'event'; data: EventItem };
 
 export default function ExploreScreen() {
@@ -38,6 +42,28 @@ export default function ExploreScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joiningId, setJoiningId] = useState<number | null>(null);
+  const [view, setView] = useState<ViewMode>('list');
+  const showMap = tab === 'rides' && view === 'map';
+
+  // Rides with a known start point -> map pins (private rides in the "lock" colour)
+  const rideMarkers = useMemo(() => {
+    const markers: MapMarker[] = [];
+    for (const it of items) {
+      if (it.kind !== 'ride') continue;
+      const r = it.data;
+      if (r.startLat == null || r.startLng == null) continue;
+      const priv = isPrivateRide(r);
+      markers.push({
+        id: r.id,
+        coordinate: { latitude: Number(r.startLat), longitude: Number(r.startLng) },
+        title: `${priv ? '🔒 ' : ''}${r.title}`,
+        subtitle: `${formatDate(r.date)} · ${r.startLocation}`,
+        color: priv ? PRIVATE_COLOR : isPastRide(r) ? Brand.faint : Brand.primary,
+      });
+    }
+    return markers;
+  }, [items]);
+  const ridesWithoutPin = items.filter((it) => it.kind === 'ride').length - rideMarkers.length;
 
   const [prevParams, setPrevParams] = useState({ rideType: params.rideType, tab: params.tab });
   if (params.rideType !== prevParams.rideType || params.tab !== prevParams.tab) {
@@ -112,7 +138,17 @@ export default function ExploreScreen() {
     if (ride.creatorId === user?.id) return { label: 'Your ride', disabled: true, variant: 'soft' as const };
     if (ride.participants.includes(me)) return { label: 'Joined ✓', disabled: true, variant: 'soft' as const };
     if (isPastRide(ride)) return { label: 'Finished', disabled: true, variant: 'soft' as const };
+    // private: the code is entered on the ride page
+    if (isPrivateRide(ride) && isLockedRide(ride)) return { label: 'Enter code', disabled: false, variant: 'outline' as const };
     return { label: 'Join ride', disabled: false, variant: 'navy' as const };
+  };
+
+  const onRideAction = (ride: Ride) => {
+    if (isPrivateRide(ride) && isLockedRide(ride)) {
+      router.push({ pathname: '/rideDetails/[id]', params: { id: String(ride.id), code: '1' } });
+      return;
+    }
+    handleJoin(ride);
   };
 
   const activeFilters = [difficulty, rideType].filter(Boolean).length + (upcomingOnly ? 0 : 1);
@@ -127,7 +163,26 @@ export default function ExploreScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Brand.background, paddingTop: insets.top + 8 }}>
       <View style={styles.top}>
-        <Text style={styles.title}>Explore</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Explore</Text>
+          {tab === 'rides' && (
+            <View style={styles.viewToggle}>
+              {(['list', 'map'] as const).map((v) => (
+                <Pressable
+                  key={v}
+                  onPress={() => setView(v)}
+                  style={[styles.viewBtn, view === v && styles.viewBtnActive]}
+                  accessibilityRole="button"
+                  accessibilityLabel={v === 'list' ? 'Show as list' : 'Show on map'}
+                  accessibilityState={{ selected: view === v }}
+                >
+                  <Ionicons name={v === 'list' ? 'list' : 'map'} size={15} color={view === v ? '#fff' : Brand.muted} />
+                  <Text style={[styles.viewBtnText, view === v && { color: '#fff' }]}>{v === 'list' ? 'List' : 'Map'}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
         <Text style={styles.subtitle}>Group rides, shared trips and events near you.</Text>
 
         <Segmented<Tab>
@@ -180,6 +235,36 @@ export default function ExploreScreen() {
 
       {loading ? (
         <Loading />
+      ) : showMap ? (
+        <View style={styles.mapWrap}>
+          {error ? (
+            <Pressable style={styles.errorBox} onPress={fetchData}>
+              <Text style={styles.errorText}>{error} Tap to retry.</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.mapLegend}>
+              <Legend color={Brand.primary} label="Public" />
+              <Legend color={PRIVATE_COLOR} label="Private" />
+              {!upcomingOnly && <Legend color={Brand.faint} label="Past" />}
+              <Text style={styles.mapCount} numberOfLines={1}>
+                {rideMarkers.length} on map{ridesWithoutPin > 0 ? ` · ${ridesWithoutPin} without location` : ''}
+              </Text>
+            </View>
+          )}
+          <View style={{ flex: 1 }}>
+            <AppMap
+              markers={rideMarkers}
+              height="100%"
+              showsUserLocation
+              onMarkerPress={(id) => router.push(`/rideDetails/${id}`)}
+            />
+            {rideMarkers.length === 0 && !error && (
+              <View style={styles.mapEmpty} pointerEvents="none">
+                <Text style={styles.mapEmptyText}>No rides with a location match these filters.</Text>
+              </View>
+            )}
+          </View>
+        </View>
       ) : (
         <FlatList
           data={items}
@@ -228,12 +313,21 @@ export default function ExploreScreen() {
                 actionVariant={action.variant}
                 actionDisabled={action.disabled}
                 actionLoading={joiningId === item.data.id}
-                onAction={() => handleJoin(item.data)}
+                onAction={() => onRideAction(item.data)}
               />
             );
           }}
         />
       )}
+    </View>
+  );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+      <Text style={styles.legendText}>{label}</Text>
     </View>
   );
 }
@@ -250,6 +344,26 @@ function FilterChip({ label, active, onPress, icon }: { label: string; active: b
 const styles = StyleSheet.create({
   top: { paddingHorizontal: 20 },
   title: { fontSize: 28, fontWeight: '900', color: Brand.text },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  viewToggle: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: Radius.pill, padding: 3, ...Shadow },
+  viewBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill },
+  viewBtnActive: { backgroundColor: Brand.navy },
+  viewBtnText: { fontSize: 12, fontWeight: '800', color: Brand.muted },
+  mapWrap: { flex: 1, paddingHorizontal: 20, paddingBottom: 16 },
+  mapLegend: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10 },
+  legendText: { fontSize: 12, fontWeight: '700', color: Brand.textSoft },
+  mapCount: { marginLeft: 'auto', flexShrink: 1, fontSize: 12, color: Brand.muted, fontWeight: '600' },
+  mapEmpty: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: 16,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: Radius.md,
+    padding: 12,
+    ...Shadow,
+  },
+  mapEmptyText: { textAlign: 'center', color: Brand.textSoft, fontWeight: '600', fontSize: 13 },
   subtitle: { fontSize: 14, color: Brand.muted, marginTop: 2, marginBottom: 14 },
   search: {
     flexDirection: 'row',

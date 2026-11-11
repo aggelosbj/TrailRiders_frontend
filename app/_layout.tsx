@@ -58,6 +58,20 @@ function RootNavigator() {
         <Stack.Screen name="editEvent/[id]" />
         <Stack.Screen name="premium" />
         <Stack.Screen name="messages" />
+        <Stack.Screen name="post/new" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="post/[id]" />
+        <Stack.Screen name="sos" />
+        <Stack.Screen name="track/index" />
+        <Stack.Screen name="track/record" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="track/[id]" />
+        <Stack.Screen name="routes/index" />
+        <Stack.Screen name="routes/[id]" />
+        <Stack.Screen name="routes/new" />
+        <Stack.Screen name="market/index" />
+        <Stack.Screen name="market/[id]" />
+        <Stack.Screen name="market/new" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="market/edit/[id]" />
+        <Stack.Screen name="HeaderScreens/emergencyInfo" />
         <Stack.Screen name="chat/[userId]" />
         <Stack.Screen name="follows/[userId]" />
         <Stack.Screen name="legal/[doc]" />

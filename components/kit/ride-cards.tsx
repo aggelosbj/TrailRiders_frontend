@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { isLockedRide, isPrivateRide } from '@/api/rideAccessApi';
 import { dateParts, formatDate, isPastRide, Ride } from '@/api/ridesApi';
 import { Brand, DIFFICULTY_COLORS, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { Button } from './button';
@@ -15,6 +16,25 @@ export function DifficultyBadge({ difficulty }: { difficulty?: string }) {
   return (
     <View style={[styles.badge, { backgroundColor: c.bg }]}>
       <Text style={[styles.badgeText, { color: c.fg }]}>{difficulty}</Text>
+    </View>
+  );
+}
+
+/** Colour used for private rides (lock badge, map pins) */
+export const PRIVATE_COLOR = '#7C3AED';
+export const PRIVATE_SOFT = '#F1EAFE';
+
+/** Lock badge for private rides. `locked` = you still need the code. */
+export function PrivateBadge({ locked, light }: { locked?: boolean; light?: boolean }) {
+  return (
+    <View
+      style={[styles.badge, styles.lockBadge, { backgroundColor: light ? 'rgba(124,58,237,0.9)' : PRIVATE_SOFT }]}
+      accessibilityLabel={locked ? 'Private ride, code required' : 'Private ride'}
+    >
+      <Ionicons name="lock-closed" size={11} color={light ? '#fff' : PRIVATE_COLOR} />
+      <Text style={[styles.badgeText, { color: light ? '#fff' : PRIVATE_COLOR }]} numberOfLines={1}>
+        {locked ? 'Private ride — code required' : 'Private'}
+      </Text>
     </View>
   );
 }
@@ -36,6 +56,11 @@ export function FeaturedRideCard({ ride, onPress }: { ride: Ride; onPress: () =>
         <Text style={styles.dateMonth}>{month}</Text>
       </View>
       <View style={styles.featuredBody}>
+        {isPrivateRide(ride) && (
+          <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+            <PrivateBadge locked={isLockedRide(ride)} light />
+          </View>
+        )}
         <Text style={styles.featuredTitle} numberOfLines={2}>
           {ride.title}
         </Text>
@@ -97,6 +122,11 @@ export function RideCard({
             {ride.title}
           </Text>
         </View>
+        {isPrivateRide(ride) && (
+          <View style={[styles.rowCenter, { marginTop: 4 }]}>
+            <PrivateBadge locked={isLockedRide(ride)} />
+          </View>
+        )}
         <View style={[styles.rowCenter, { marginTop: 4 }]}>
           <Ionicons name="calendar-outline" size={13} color={Brand.muted} />
           <Text style={styles.cardSub}>
@@ -200,4 +230,5 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: Brand.muted, fontWeight: '600' },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill },
   badgeText: { fontSize: 11, fontWeight: '700' },
+  lockBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
 });

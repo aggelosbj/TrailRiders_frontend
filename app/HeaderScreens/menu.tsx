@@ -44,6 +44,7 @@ export default function MenuScreen() {
           <Item icon="chatbubbles-outline" label="Messages" onPress={() => router.push('/messages')} />
           <Item icon="notifications-outline" label="Notifications" onPress={() => router.push('/HeaderScreens/notifications')} />
           <Item icon="ban-outline" label="Blocked riders" onPress={() => router.push('/HeaderScreens/blocked')} />
+          <Item icon="medkit-outline" label="Emergency info (ICE)" onPress={() => router.push('/HeaderScreens/emergencyInfo')} />
           <Item icon="star-outline" label="TrailRiders Premium" value={user?.isPremium ? 'Active' : undefined} onPress={() => router.push('/premium')} />
         </Group>
 
@@ -52,6 +53,11 @@ export default function MenuScreen() {
           <Item icon="add-circle-outline" label="Create a ride" onPress={() => router.push('/(tabs)/createRide')} />
           <Item icon="car-outline" label="Ride share" onPress={() => router.push({ pathname: '/(tabs)/joinRide', params: { tab: 'shares' } })} />
           <Item icon="calendar-outline" label="Events" onPress={() => router.push({ pathname: '/(tabs)/joinRide', params: { tab: 'events' } })} />
+          <Item icon="radio-button-on-outline" label="Record a ride" onPress={() => router.push('/track/record')} />
+          <Item icon="stats-chart-outline" label="My recorded rides" onPress={() => router.push('/track')} />
+          <Item icon="map-outline" label="Best roads" onPress={() => router.push('/routes')} />
+          <Item icon="storefront-outline" label="Marketplace" onPress={() => router.push('/market')} />
+          <Item icon="images-outline" label="Feed" onPress={() => router.push('/(tabs)/feed')} />
         </Group>
 
         <Group title="About">

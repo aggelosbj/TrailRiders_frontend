@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorMessage } from '@/api/client';
@@ -17,6 +17,18 @@ import { Brand, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
 import { useAuth } from '@/context/AuthContext';
 import { useUnreadCount, useUnreadMessages } from '@/hooks/use-unread-count';
 import { getFeedApi } from '@/api/socialApi';
+import { WeatherWidget } from '@/components/kit/weather-widget';
+
+type IconName = keyof typeof Ionicons.glyphMap;
+
+const TOOLS: { label: string; sub: string; icon: IconName; color: string; bg: string; href: string }[] = [
+  { label: 'Best roads', sub: 'Top-rated routes', icon: 'map', color: '#0B7FD1', bg: '#E6F4FE', href: '/routes' },
+  { label: 'Marketplace', sub: 'Bikes & gear', icon: 'storefront', color: '#B45309', bg: '#FEF3C7', href: '/market' },
+  { label: 'Ride share', sub: 'Free seats', icon: 'car', color: '#2E9E44', bg: '#E7F6EA', href: '/joinRide?tab=shares' },
+  { label: 'Events', sub: 'Meetups & shows', icon: 'calendar', color: '#8B5CF6', bg: '#F1ECFE', href: '/joinRide?tab=events' },
+  { label: 'My rides log', sub: 'Recorded stats', icon: 'stats-chart', color: '#E5484D', bg: '#FDECEC', href: '/track' },
+  { label: 'Feed', sub: 'Share moments', icon: 'images', color: '#003366', bg: '#E8EEF5', href: '/feed' },
+];
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -104,12 +116,15 @@ export default function HomeScreen() {
         <View style={styles.heroTop}>
           <Pressable style={styles.userRow} onPress={() => router.push('/(tabs)/profile')}>
             <Avatar name={user?.fullName || user?.username} image={user?.image} size={46} ring />
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.hello}>{greeting()},</Text>
-              <Text style={styles.name}>{firstName} 👋</Text>
+            <View style={{ marginLeft: 10, flexShrink: 1, minWidth: 0 }}>
+              <Text style={styles.hello} numberOfLines={1}>{greeting()},</Text>
+              <Text style={styles.name} numberOfLines={1}>{firstName} 👋</Text>
             </View>
           </Pressable>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable style={styles.sos} onPress={() => router.push('/sos')} hitSlop={6} accessibilityLabel="Emergency SOS">
+              <Text style={styles.sosText}>SOS</Text>
+            </Pressable>
             <IconButton name="chatbubbles-outline" dark badge={unreadMessages} onPress={() => router.push('/messages')} />
             <IconButton name="notifications-outline" dark badge={unread} onPress={() => router.push('/HeaderScreens/notifications')} />
             <IconButton name="menu" dark onPress={() => router.push('/HeaderScreens/menu')} />
@@ -145,6 +160,33 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.quickText}>New ride</Text>
           </Pressable>
+        </View>
+
+        <WeatherWidget style={{ marginTop: 18 }} />
+
+        {/* Ride tools */}
+        <Pressable style={styles.recordCard} onPress={() => router.push('/track/record')}>
+          <LinearGradient colors={['#E5484D', '#FA881D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View style={styles.recordIcon}>
+            <Ionicons name="radio-button-on" size={26} color="#E5484D" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={styles.recordTitle}>Record a ride</Text>
+            <Text style={styles.recordSub}>Live speed, distance, lean & G-force — with full stats after.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="#fff" />
+        </Pressable>
+
+        <View style={styles.tools}>
+          {TOOLS.map((t) => (
+            <Pressable key={t.label} style={({ pressed }) => [styles.tool, pressed && { opacity: 0.85 }]} onPress={() => router.push(t.href as never)}>
+              <View style={[styles.toolIcon, { backgroundColor: t.bg }]}>
+                <Ionicons name={t.icon} size={22} color={t.color} />
+              </View>
+              <Text style={styles.toolLabel}>{t.label}</Text>
+              <Text style={styles.toolSub} numberOfLines={1}>{t.sub}</Text>
+            </Pressable>
+          ))}
         </View>
 
         {error && (
@@ -236,6 +278,20 @@ export default function HomeScreen() {
             ))}
           </>
         )}
+
+        {/* Advertising slot (revenue) */}
+        <Pressable
+          style={styles.ad}
+          onPress={() => Linking.openURL('mailto:ads@trailriders.gr?subject=Advertise%20on%20TrailRiders')}
+        >
+          <LinearGradient colors={['#1F2937', Brand.navy]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <Text style={styles.adTag}>SPONSORED</Text>
+          <Text style={styles.adTitle}>Your brand here 🚀</Text>
+          <Text style={styles.adSub}>Reach thousands of riders across Greece — shops, workshops, gear and events.</Text>
+          <View style={styles.adBtn}>
+            <Text style={styles.adBtnText}>Advertise with us</Text>
+          </View>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -244,7 +300,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   hero: { paddingHorizontal: 20, paddingBottom: 30, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  userRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  userRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 },
   hello: { color: '#DCEFFF', fontSize: 13, fontWeight: '600' },
   name: { color: '#fff', fontSize: 19, fontWeight: '900' },
   heroTitle: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 22, marginBottom: 16, lineHeight: 32 },
@@ -284,6 +340,23 @@ const styles = StyleSheet.create({
   errorText: { color: Brand.danger, flex: 1, fontSize: 13, fontWeight: '600' },
   shareTeaser: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: Radius.lg, padding: 16, ...Shadow },
   shareTeaserText: { flex: 1, color: Brand.textSoft, fontSize: 14, lineHeight: 20 },
+  sos: { width: 40, height: 40, borderRadius: 20, backgroundColor: Brand.danger, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.55)' },
+  sosText: { color: '#fff', fontWeight: '900', fontSize: 11, letterSpacing: 0.3 },
+  recordCard: { flexDirection: 'row', alignItems: 'center', borderRadius: Radius.lg, padding: 16, marginTop: 16, overflow: 'hidden', ...Shadow },
+  recordIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  recordTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  recordSub: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 2, lineHeight: 18 },
+  tools: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 14, rowGap: 12 },
+  tool: { width: '31.5%', backgroundColor: '#fff', borderRadius: Radius.lg, paddingVertical: 14, paddingHorizontal: 8, alignItems: 'center', ...Shadow },
+  toolIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  toolLabel: { fontSize: 13, fontWeight: '800', color: Brand.text, textAlign: 'center' },
+  toolSub: { fontSize: 11, color: Brand.muted, marginTop: 2, textAlign: 'center' },
+  ad: { borderRadius: Radius.lg, padding: 18, marginTop: 24, overflow: 'hidden', ...Shadow },
+  adTag: { color: '#FCD34D', fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
+  adTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 6 },
+  adSub: { color: '#D1D5DB', fontSize: 13, marginTop: 4, lineHeight: 19 },
+  adBtn: { alignSelf: 'flex-start', backgroundColor: '#FCD34D', paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.pill, marginTop: 12 },
+  adBtnText: { color: '#1F2937', fontWeight: '900', fontSize: 13 },
   nextCard: {
     flexDirection: 'row',
     alignItems: 'center',

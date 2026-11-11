@@ -19,6 +19,7 @@ const GOLD = '#F5A524';
 const PERKS: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string }[] = [
   { icon: 'infinite', title: 'Unlimited hosting', text: 'Organize as many rides, ride shares and events as you like (free accounts: 3 upcoming at a time).' },
   { icon: 'rocket', title: 'Boosted rides', text: 'Your rides appear first in Featured on everyone’s Home screen.' },
+  { icon: 'storefront', title: 'Marketplace boost', text: 'Unlimited listings (free: 5) and feature 2 listings at the top for 7 days.' },
   { icon: 'star', title: 'PRO badge', text: 'Stand out on your profile, rides, trips, events and messages.' },
   { icon: 'heart', title: 'Support the community', text: 'Help us keep TrailRiders running and growing in Greece.' },
 ];
