@@ -1,98 +1,89 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { loginApi } from "../../api/authApi";
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { errorMessage } from '@/api/client';
+import { AuthShell } from '@/components/kit/auth-shell';
+import { Button } from '@/components/kit/button';
+import { FormField } from '@/components/kit/form';
+import { Brand } from '@/constants/brand';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const router = useRouter();
+  const { login } = useAuth();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
-  const [flag, setFlag] = useState(false);
-  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
+    if (!userName.trim() || !password) {
+      setError('Please enter your username and password.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
     try {
-      const data = await loginApi(userName.trim(), password.trim());
-      console.log("Logged in:", data);
-
-      setFlag(true);
-
-      setTimeout(() => {
-        router.replace('/(tabs)/home');
-      }, 1000);
-
+      await login(userName.trim(), password);
+      router.replace('/(tabs)/home');
     } catch (err) {
-      console.log("Login error:", err);
-      
-      //DONT FORGET TO ADD CUSTOM ALLERT BOX
-      Alert.alert("Login failed. Please check your credentials.");
+      setError(errorMessage(err, 'Login failed. Please check your credentials.'));
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (flag) {
-    return (
-      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Ionicons name="checkmark-circle" size={100} color="#fa881dff" />
-        <Text style={{ marginTop: 20, fontSize: 20, fontWeight: 'bold', color: '#1DA1FA' }}>
-          Login Successful!
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome Back 👋</Text>
-      <Text style={styles.subtitle}>Login to continue</Text>
-
-      <TextInput
-        placeholder="Username"
-        placeholderTextColor="#aaa"
-        style={styles.input}
+    <AuthShell title="Welcome back 👋" subtitle="Log in to continue your journey.">
+      <FormField
+        label="Username"
+        icon="person-outline"
+        placeholder="Your username"
         value={userName}
         onChangeText={setUserName}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="next"
       />
-      <TextInput
-        placeholder="Password"
-        placeholderTextColor="#aaa"
-        style={styles.input}
-        secureTextEntry
+      <FormField
+        label="Password"
+        icon="lock-closed-outline"
+        placeholder="Your password"
+        password
         value={password}
         onChangeText={setPassword}
+        onSubmitEditing={handleLogin}
+        returnKeyType="go"
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
-      </TouchableOpacity>
+      <Pressable onPress={() => router.push('/loginRegister/forgotPassword')} style={styles.forgot}>
+        <Text style={styles.link}>Forgot password?</Text>
+      </Pressable>
 
-      <TouchableOpacity onPress={() => router.push("/loginRegister/forgotPassword")}>
-        <Text style={styles.link}>Forgot Password?</Text>
-      </TouchableOpacity>
-    </View>
+      {error && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
+      <Button title="Login" onPress={handleLogin} loading={loading} icon="log-in-outline" />
+
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>New to TrailRiders? </Text>
+        <Pressable onPress={() => router.replace('/loginRegister/register')}>
+          <Text style={styles.link}>Create an account</Text>
+        </Pressable>
+      </View>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 8, color: '#222' },
-  subtitle: { fontSize: 16, marginBottom: 24, color: '#666' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  button: {
-    backgroundColor: '#1DA1FA',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  link: { marginTop: 16, color: '#1DA1FA', fontWeight: '500', textAlign: 'center' },
+  forgot: { alignSelf: 'flex-end', marginTop: -6, marginBottom: 18 },
+  link: { color: Brand.primary, fontWeight: '700', fontSize: 14 },
+  errorBox: { backgroundColor: Brand.dangerSoft, borderRadius: 10, padding: 12, marginBottom: 14 },
+  errorText: { color: Brand.danger, fontWeight: '600', fontSize: 13 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 22, flexWrap: 'wrap' },
+  footerText: { color: Brand.muted, fontSize: 14 },
 });

@@ -1,292 +1,281 @@
-import { getAllRidesApi, Ride } from '@/api/ridesApi';
-import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  BackHandler,
-  Image,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const HomeScreen: React.FC = () => {
+import { errorMessage } from '@/api/client';
+import { EventItem, getEventsApi } from '@/api/eventsApi';
+import { getPassengerRidesApi, PassengerRide } from '@/api/passengerRidesApi';
+import { formatDate, getAllRidesApi, isPastRide, Ride } from '@/api/ridesApi';
+import { Avatar } from '@/components/kit/avatar';
+import { EmptyState, IconButton, Loading, SectionTitle } from '@/components/kit/layout';
+import { EventCard, ShareCard } from '@/components/kit/more-cards';
+import { FeaturedRideCard, RideCard } from '@/components/kit/ride-cards';
+import { Brand, Radius, RIDE_TYPE_ICONS, Shadow } from '@/constants/brand';
+import { useAuth } from '@/context/AuthContext';
+import { useUnreadCount } from '@/hooks/use-unread-count';
+
+const greeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+};
+
+export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const unread = useUnreadCount();
+
   const [rides, setRides] = useState<Ride[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [shares, setShares] = useState<PassengerRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // FETCH RIDES FROM DB
-  const fetchRides = async () => {
+  const fetchRides = useCallback(async () => {
     try {
-      const data = await getAllRidesApi();
-      setRides(data);
-    } catch (error) {
-      console.log("Error fetching rides:", error);
+      const [r, e, s] = await Promise.all([
+        getAllRidesApi(),
+        getEventsApi({ upcoming: true }).catch(() => []),
+        getPassengerRidesApi({ upcoming: true }).catch(() => []),
+      ]);
+      setRides(r);
+      setEvents(e);
+      setShares(s);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    fetchRides();
   }, []);
 
-  // REFRESH HOME PAGE
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchRides();
-  }, []);
-
-  // HANDLE TO BACK ACTION STO HOME SCREEN ETSI WSTE NA MIN PAEI PISW STO LOGIN
   useFocusEffect(
     useCallback(() => {
-      const onBackPress = () => {
-        BackHandler.exitApp();   
+      fetchRides();
+    }, [fetchRides])
+  );
+
+  // Android back on Home exits the app instead of going back to login
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        BackHandler.exitApp();
         return true;
-      };
-
-      const subscription = BackHandler.addEventListener(
-        "hardwareBackPress",
-        onBackPress
-      );
-
-      return () => subscription.remove();
+      });
+      return () => sub.remove();
     }, [])
   );
 
-  // LOADING HANDLING
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#003366" />
-      </SafeAreaView>
-    );
-  }
+  const me = String(user?.id ?? '');
+  const upcoming = useMemo(() => rides.filter((r) => !isPastRide(r)), [rides]);
+  const featured = useMemo(
+    () => [...upcoming].sort((a, b) => b.participantsCount - a.participantsCount).slice(0, 6),
+    [upcoming]
+  );
+  const nextRide = useMemo(() => upcoming.find((r) => r.participants.includes(me)), [upcoming, me]);
+  const openRides = useMemo(() => upcoming.filter((r) => !r.participants.includes(me)).slice(0, 5), [upcoming, me]);
+
+  const firstName = (user?.fullName || user?.username || '').split(' ')[0];
+
+  if (loading) return <Loading />;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-      <ScrollView 
-        style={styles.container} 
-        contentContainerStyle={{ paddingBottom: 20 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#003366"/>
-        }
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.logoView}>
-            <TouchableOpacity
-              style={styles.logo2}
-              onPress={() => router.push('/modal')}
-            >
-              <Image source={require('@/images/logo.webp')} style={styles.logo2}/>
-            </TouchableOpacity>
-            <Text style={styles.logo}>Home</Text>
-          </View>
-          <View style={styles.headerIcons}>
-            <Ionicons name="notifications-outline" size={24} color="black" style={{ marginRight: 16 }} onPress={() => router.push('/HeaderScreens/notifications')}/>
-            <Ionicons name="menu" size={24} color="black" onPress={() => router.push('/HeaderScreens/menu')}/>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: Brand.background }}
+      contentContainerStyle={{ paddingBottom: 30 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRides(); }} tintColor={Brand.primary} />}
+    >
+      {/* Header */}
+      <LinearGradient colors={[Brand.navy, Brand.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, { paddingTop: insets.top + 14 }]}>
+        <View style={styles.heroTop}>
+          <Pressable style={styles.userRow} onPress={() => router.push('/(tabs)/profile')}>
+            <Avatar name={user?.fullName || user?.username} image={user?.image} size={46} ring />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={styles.hello}>{greeting()},</Text>
+              <Text style={styles.name}>{firstName} 👋</Text>
+            </View>
+          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <IconButton name="notifications-outline" dark badge={unread} onPress={() => router.push('/HeaderScreens/notifications')} />
+            <IconButton name="menu" dark onPress={() => router.push('/HeaderScreens/menu')} />
           </View>
         </View>
 
-        {/* Search */}
-        <TextInput style={styles.search} placeholder="Search" placeholderTextColor="#aaa" />
+        <Text style={styles.heroTitle}>Where are we riding next?</Text>
 
-        {/* Featured Rides */}
-        <Text style={styles.sectionTitle}>Featured Rides</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {rides.map((ride) => (
-            <View key={ride.id} style={styles.featuredCard}>
-              <Image
-                /* THELEI ALLAGI NA PAIRNEI IMAGES APO TO DATABASE TO EXW VALEI STATIC */
-                source={ride.image ? require('@/images/logo.webp') : require('@/images/logo.webp')} 
-                style={styles.rideImage} 
-              />
-              
-              {/* TITLE FROM DB */}
-              <Text style={styles.rideTitle} numberOfLines={2}>{ride.title}</Text>
-              
-              {/* RIDE DISTANCE FROM DB */}
-              <Text style={styles.subText2}>{ride.rideDistance} km</Text>
-              
-              <TouchableOpacity style={styles.featuredDetails} onPress={() => router.push(`/rideDetails/${ride.id}` as any)}>
-                {/* edw prepei ena call component για RIDE DETAILS */}
-                <Text style={styles.buttonText}>Details</Text>
-              </TouchableOpacity>
-            </View>
+        <Pressable style={styles.search} onPress={() => router.push('/(tabs)/joinRide')}>
+          <Ionicons name="search" size={19} color={Brand.faint} />
+          <Text style={styles.searchText}>Search rides, places, organizers…</Text>
+        </Pressable>
+      </LinearGradient>
+
+      <View style={styles.body}>
+        {/* Quick filters */}
+        <View style={styles.quickRow}>
+          {(['Motorcycle', 'Car', 'Both'] as const).map((type) => (
+            <Pressable
+              key={type}
+              style={styles.quick}
+              onPress={() => router.push({ pathname: '/(tabs)/joinRide', params: { rideType: type } })}
+            >
+              <View style={styles.quickIcon}>
+                <Ionicons name={RIDE_TYPE_ICONS[type] as keyof typeof Ionicons.glyphMap} size={22} color={Brand.primary} />
+              </View>
+              <Text style={styles.quickText}>{type === 'Both' ? 'Mixed' : type === 'Motorcycle' ? 'Moto' : 'Cars'}</Text>
+            </Pressable>
           ))}
-        </ScrollView>
-
-        {/* Recommended THA DINEI TO PIO KONTINO RIDE ANALOGA TO LOCATION TOU XRHSTH KAI TO STARTLOCATION */}
-        <Text style={styles.sectionTitle}>Recommended</Text>
-        {rides.length > 0 && (
-          <View style={styles.row}>
-             <Image 
-                /* THELEI ALLAGI NA PAIRNEI IMAGES APO TO DATABASE TO EXW VALEI STATIC */
-                source={rides[0].image ? require('@/images/logo.webp') : require('@/images/logo.webp')} 
-                style={styles.smallCard} 
-             />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.linkText}>{rides[1].title}</Text>
-              <Text style={styles.subText}>{rides[1].rideDistance} km away</Text>
+          <Pressable style={styles.quick} onPress={() => router.push('/(tabs)/createRide')}>
+            <View style={[styles.quickIcon, { backgroundColor: Brand.navy }]}>
+              <Ionicons name="add" size={24} color="#fff" />
             </View>
-          </View>
+            <Text style={styles.quickText}>New ride</Text>
+          </Pressable>
+        </View>
+
+        {error && (
+          <Pressable style={styles.errorBox} onPress={fetchRides}>
+            <Ionicons name="cloud-offline-outline" size={18} color={Brand.danger} />
+            <Text style={styles.errorText}>{error} Tap to retry.</Text>
+          </Pressable>
         )}
 
-        {/* Upcoming THA DOUME TI AKRIVWS EVENT THA EMFANIZEI STO TELOS*/}
-        <Text style={styles.sectionTitle}>Upcoming</Text>
-        {rides.length > 1 && (
-          <View style={styles.row}>
-            <Image 
-                 /* THELEI ALLAGI NA PAIRNEI IMAGES APO TO DATABASE TO EXW VALEI STATIC */
-                source={rides[1].image ? require('@/images/logo.webp') : require('@/images/logo.webp')} 
-                style={styles.smallCard} 
-             />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.boldText}>{rides[0].title}</Text>
-              <Text style={styles.subText}>{rides[0].rideDistance} km away</Text>
-              <TouchableOpacity style={styles.button} onPress={() => router.push(`/rideDetails/${rides[0].id}` as any)}>
-                <Text style={styles.buttonText}>See Details</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+        {/* Next ride for the user */}
+        {nextRide && (
+          <>
+            <SectionTitle title="Your next ride" />
+            <Pressable style={styles.nextCard} onPress={() => router.push(`/rideDetails/${nextRide.id}`)}>
+              <View style={styles.nextIcon}>
+                <Ionicons name="flag" size={22} color="#fff" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.nextTitle} numberOfLines={1}>{nextRide.title}</Text>
+                <Text style={styles.nextSub}>
+                  {formatDate(nextRide.date)}
+                  {nextRide.rideTime ? ` · ${nextRide.rideTime}` : ''}
+                </Text>
+                <Text style={styles.nextSub} numberOfLines={1}>
+                  {nextRide.startLocation} → {nextRide.finishLocation}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#fff" />
+            </Pressable>
+          </>
         )}
-      </ScrollView>
-    </SafeAreaView>
+
+        {/* Featured */}
+        <SectionTitle title="Featured rides" action="See all" onAction={() => router.push('/(tabs)/joinRide')} />
+        {featured.length === 0 ? (
+          <EmptyState
+            icon="bicycle"
+            title="No upcoming rides yet"
+            message="Be the first to organise one!"
+            actionLabel="Create a ride"
+            onAction={() => router.push('/(tabs)/createRide')}
+          />
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
+            {featured.map((ride) => (
+              <FeaturedRideCard key={ride.id} ride={ride} onPress={() => router.push(`/rideDetails/${ride.id}`)} />
+            ))}
+          </ScrollView>
+        )}
+
+        {/* Events */}
+        {events.length > 0 && (
+          <>
+            <SectionTitle title="Upcoming events" action="All events" onAction={() => router.push({ pathname: '/(tabs)/joinRide', params: { tab: 'events' } })} />
+            {events.slice(0, 2).map((e) => (
+              <EventCard key={e.id} event={e} onPress={() => router.push(`/event/${e.id}`)} />
+            ))}
+          </>
+        )}
+
+        {/* Ride share */}
+        <SectionTitle title="Ride share" action={shares.length ? 'See all' : 'Offer seats'} onAction={() => shares.length ? router.push({ pathname: '/(tabs)/joinRide', params: { tab: 'shares' } }) : router.push({ pathname: '/(tabs)/createRide', params: { type: 'share' } })} />
+        {shares.length === 0 ? (
+          <Pressable style={styles.shareTeaser} onPress={() => router.push({ pathname: '/(tabs)/createRide', params: { type: 'share' } })}>
+            <Ionicons name="car-sport" size={26} color={Brand.primary} />
+            <Text style={styles.shareTeaserText}>Have a free seat on your next trip? Offer it to another rider.</Text>
+            <Ionicons name="chevron-forward" size={18} color={Brand.faint} />
+          </Pressable>
+        ) : (
+          shares.slice(0, 3).map((r) => <ShareCard key={r.id} ride={r} onPress={() => router.push(`/passengerRide/${r.id}`)} />)
+        )}
+
+        {/* Open rides */}
+        {openRides.length > 0 && (
+          <>
+            <SectionTitle title="Upcoming — join in" action="Explore" onAction={() => router.push('/(tabs)/joinRide')} />
+            {openRides.map((ride) => (
+              <RideCard key={ride.id} ride={ride} onPress={() => router.push(`/rideDetails/${ride.id}`)} />
+            ))}
+          </>
+        )}
+      </View>
+    </ScrollView>
   );
-};
-
-export default HomeScreen;
+}
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#DCDCDC",
-    paddingTop: 20
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  logo: {
-    fontSize: 18,
-    fontWeight: "700",
-    paddingLeft: 15
-  },
-  headerIcons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  hero: { paddingHorizontal: 20, paddingBottom: 30, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  userRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  hello: { color: '#DCEFFF', fontSize: 13, fontWeight: '600' },
+  name: { color: '#fff', fontSize: 19, fontWeight: '900' },
+  heroTitle: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 22, marginBottom: 16, lineHeight: 32 },
   search: {
-    backgroundColor: "#e6e6e6",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: Radius.md,
+    paddingHorizontal: 14,
+    height: 50,
+    ...Shadow,
   },
-  sectionTitle: {
-    fontWeight: "bold",
-    fontSize: 16,
-    marginBottom: 8,
-    marginTop: 12,
+  searchText: { color: Brand.faint, marginLeft: 10, fontSize: 15 },
+  body: { paddingHorizontal: 20 },
+  quickRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
+  quick: { alignItems: 'center', flex: 1 },
+  quickIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+    ...Shadow,
   },
-  featuredCard: {
-    width: 160,
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: "#fff",
-    marginRight: 12,
-    padding: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
+  quickText: { fontSize: 12, fontWeight: '700', color: Brand.textSoft },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Brand.dangerSoft,
+    padding: 12,
+    borderRadius: Radius.md,
+    marginTop: 18,
   },
-  rideImage: {
-    width: "70%",
-    height: "50%",
-    borderRadius: 8,
-    marginBottom: 8,
-    resizeMode: 'cover', // GIA TIN ANALOGIA ISWS XREIASTEI NA VGEI
+  errorText: { color: Brand.danger, flex: 1, fontSize: 13, fontWeight: '600' },
+  shareTeaser: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: Radius.lg, padding: 16, ...Shadow },
+  shareTeaserText: { flex: 1, color: Brand.textSoft, fontSize: 14, lineHeight: 20 },
+  nextCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Brand.navy,
+    borderRadius: Radius.lg,
+    padding: 16,
+    ...Shadow,
   },
-  rideTitle: {
-    fontWeight: "700",
-    fontSize: 12,
-    textAlign: "center"
-  },
-  subText: {
-    color: "#555",
-    fontSize: 10,
-  },
-  subText2: {
-    color: "#555",
-    fontSize: 10,
-    marginBottom: "5%"
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12
-  },
-  smallCard: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: "#e06c6c", // BACKGROUND COLOR AN LEIPEI I EIKONA ISWS XREIASTEI NA SVISTEI KATHWS THA MPAINEI STATIC IMG AN DEN VALEI O USER
-    marginBlock: "3%",
-    marginLeft: "3%"
-  },
-  linkText: {
-    color: "#0044cc",
-    fontWeight: "600",
-  },
-  boldText: {
-    fontWeight: "700",
-  },
-  featuredDetails: {
-    backgroundColor: "#003366",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignSelf: "center"
-  },
-  button: {
-    backgroundColor: "#003366",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginTop: 6,
-    alignSelf: "flex-start",
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 14,
-  },
-  logo2:{
-    width: 65,
-    height: 65,
-    borderRadius: 35
-  },
-  logoView:{
-    flexDirection: "row",
-    alignItems: "center"
-  }
+  nextIcon: { width: 46, height: 46, borderRadius: 14, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' },
+  nextTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  nextSub: { color: '#B9D7F0', fontSize: 13, marginTop: 2 },
 });

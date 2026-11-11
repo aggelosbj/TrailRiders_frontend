@@ -1,71 +1,54 @@
-// authApi.ts
-import axios from "axios";
+import { api } from './client';
+import type { User } from './userApi';
 
-const BASE_URL = "http://10.232.202.179:8000/auth";
+export interface LoginResponse {
+  message: string;
+  accessToken: string;
+  refreshToken: string;
+  user: User;
+}
 
 // ---------- LOGIN ----------
-export async function loginApi(username: string, pwd: string) {
-  try {
-    const res = await axios.post(`${BASE_URL}/login`, {username, pwd});
-    return res.data;
-  } catch (err: any) {
-    throw err.response?.data || err.message;
-  }
+export async function loginApi(username: string, pwd: string): Promise<LoginResponse> {
+  const res = await api.post('/auth/login', { username, pwd });
+  return res.data;
+}
+
+// ---------- GOOGLE (sends the Google ID token to the backend) ----------
+export async function googleLoginApi(idToken: string): Promise<LoginResponse> {
+  const res = await api.post('/auth/google', { idToken });
+  return res.data;
 }
 
 // ---------- SIGNUP ----------
-export async function signupApi(
-  username: string,
-  pwd: string,
-  email?: string
-) {
-  try {
-    const res = await axios.post(`${BASE_URL}/signup`, {
-      username,
-      pwd,
-      email,
-    });
-    return res.data;
-  } catch (err: any) {
-    throw err.response?.data || err.message;
-  }
+export async function signupApi(username: string, pwd: string, email?: string, fullName?: string) {
+  const res = await api.post('/auth/signup', { username, pwd, email, fullName });
+  return res.data;
 }
 
-// ---------- FORGOT PASSWORD ----------
+// ---------- FORGOT PASSWORD (sends an e-mail with a reset link) ----------
 export async function forgotPasswordApi(email: string) {
+  const res = await api.post('/auth/forgotPassword', { email });
+  return res.data;
+}
+
+// ---------- LOGOUT ----------
+export async function logoutApi() {
   try {
-    const res = await axios.post(`${BASE_URL}/forgotPassword/`, {
-      email,
-    });
-    return res.data;
-  } catch (err: any) {
-    throw err.response?.data || err.message;
+    await api.post('/auth/logout');
+  } catch {
+    // ignore — the local session is cleared anyway
   }
 }
 
-// ---------- RESET PASSWORD (GET HTML PAGE) ----------
-export async function resetPasswordPageApi(id: string, token: string) {
-  try {
-    const res = await axios.get(`${BASE_URL}/resetPassword/${id}/${token}`);
-    return res.data; // HTML page
-  } catch (err: any) {
-    throw err.response?.data || err.message;
-  }
+// ---------- CHANGE PASSWORD ----------
+export async function changePasswordApi(oldPassword: string, newPassword: string, confirmNewPassword: string) {
+  const res = await api.post('/auth/changePassword', { oldPassword, newPassword, confirmNewPassword });
+  return res.data;
 }
 
-// ---------- RESET PASSWORD (POST new password) ----------
-export async function resetPasswordApi(
-  id: string,
-  token: string,
-  newPassword: string
-) {
-  try {
-    const res = await axios.post(
-      `${BASE_URL}/resetPassword/${id}/${token}`,
-      { password: newPassword }
-    );
-    return res.data;
-  } catch (err: any) {
-    throw err.response?.data || err.message;
-  }
+// ---------- DELETE ACCOUNT ----------
+export async function deleteAccountApi(confirmUsername: string) {
+  const res = await api.post('/auth/deleteUser', { confirmUsername });
+  return res.data;
 }

@@ -1,320 +1,260 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { errorMessage } from '@/api/client';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+  deleteNotificationsApi,
+  getNotificationsApi,
+  markAllReadApi,
+  markNotificationsApi,
+  NotificationItem,
+} from '@/api/notificationsApi';
+import { timeAgo } from '@/api/ridesApi';
+import { Button } from '@/components/kit/button';
+import { confirmAction, showMessage } from '@/components/kit/dialogs';
+import { EmptyState, Loading, ScreenHeader } from '@/components/kit/layout';
+import { Brand, Radius, Shadow } from '@/constants/brand';
 
-// Τύπος δεδομένων για το Notification
-interface NotificationItem {
-    id: number;
-    senderName: string;
-    description: string;
-    date: string;
-    time: string;
-    subject: string;
-    isRead: boolean;
-}
+type IconName = keyof typeof Ionicons.glyphMap;
 
-export default function MenuScreen() {
-    const router = useRouter();
+const iconFor = (subject: string): { icon: IconName; color: string; bg: string } => {
+  const s = subject.toLowerCase();
+  if (s.includes('premium')) return { icon: 'star', color: '#F5A524', bg: '#FEF3C7' };
+  if (s.includes('rating')) return { icon: 'star-half', color: '#F5A524', bg: '#FEF3C7' };
+  if (s.includes('seat confirmed')) return { icon: 'checkmark-circle', color: Brand.success, bg: Brand.successSoft };
+  if (s.includes('seat') || s.includes('passenger')) return { icon: 'car', color: Brand.primary, bg: Brand.primarySoft };
+  if (s.includes('attendee') || s.includes('event')) return { icon: 'calendar', color: Brand.navy, bg: Brand.navySoft };
+  if (s.includes('joined')) return { icon: 'person-add', color: Brand.success, bg: Brand.successSoft };
+  if (s.includes('left')) return { icon: 'person-remove', color: Brand.warning, bg: '#FEF3C7' };
+  if (s.includes('comment')) return { icon: 'chatbubble-ellipses', color: Brand.primary, bg: Brand.primarySoft };
+  if (s.includes('cancel')) return { icon: 'close-circle', color: Brand.danger, bg: Brand.dangerSoft };
+  if (s.includes('updated')) return { icon: 'refresh-circle', color: Brand.navy, bg: Brand.navySoft };
+  return { icon: 'notifications', color: Brand.primary, bg: Brand.primarySoft };
+};
 
-    // 1. ΠΡΕΠΕΙ ΝΑ ΤΑ ΒΑΛΩ DB ΚΑΙ ΝΑ ΤΡΑΒΑΩ ΑΠΟ ΕΚΕΙ
-    const [notifications, setNotifications] = useState<NotificationItem[]>([
-        { id: 1, senderName: "Thanasis", description: "Thanasis has joined the ride via link.", date: "25-12-2025", time: "12:23", subject: "New Rider Joined", isRead: false },
-        { id: 2, senderName: "System", description: "Your ride is scheduled for tomorrow.", date: "26-12-2025", time: "09:00", subject: "Ride Reminder", isRead: true },
-        { id: 3, senderName: "George", description: "Sent you a message about the route.", date: "27-12-2025", time: "14:15", subject: "Message Received", isRead: false },
-    ]);
+export default function NotificationsScreen() {
+  const router = useRouter();
+  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [viewing, setViewing] = useState<NotificationItem | null>(null);
 
-    const [selectedIds, setSelectedIds] = useState<number[]>([]); // Ποια είναι επιλεγμένα
-    const [viewingNotification, setViewingNotification] = useState<NotificationItem | null>(null); // Ποιο βλέπουμε αναλυτικά
-    const [menuVisible, setMenuVisible] = useState(false); // Για το μενού με τις 3 τελίτσες
+  const load = useCallback(async () => {
+    try {
+      setItems(await getNotificationsApi());
+    } catch (err) {
+      showMessage('Could not load notifications', errorMessage(err));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
-    // Επιλογή / Αποεπιλογή Checkbox
-    const toggleSelection = (id: number) => {
-        if (selectedIds.includes(id)) {
-            setSelectedIds(selectedIds.filter(item => item !== id));
-        } else {
-            setSelectedIds([...selectedIds, id]);
-        }
-    };
+  const toggleSelection = (id: number) =>
+    setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
-    // Διαγραφή επιλεγμένων
-    const deleteSelected = () => {
-        Alert.alert("Διαγραφή", "Είστε σίγουρος;", [
-            { text: "Άκυρο", style: "cancel" },
-            { 
-                text: "Ναι", 
-                onPress: () => {
-                    setNotifications(notifications.filter(n => !selectedIds.includes(n.id)));
-                    setSelectedIds([]);
-                }
-            }
-        ]);
-    };
+  const markAs = async (isRead: boolean) => {
+    const ids = selectedIds;
+    setItems((list) => list.map((n) => (ids.includes(n.id) ? { ...n, isRead } : n)));
+    setSelectedIds([]);
+    try {
+      await markNotificationsApi(ids, isRead);
+    } catch (err) {
+      showMessage('Error', errorMessage(err));
+      load();
+    }
+  };
 
-    // Mark as Read / Unread (batch)
-    const markAs = (status: boolean) => {
-        const updated = notifications.map(n => {
-            if (selectedIds.includes(n.id)) return { ...n, isRead: status };
-            return n;
-        });
-        setNotifications(updated);
-        setSelectedIds([]);
-    };
+  const remove = async (ids: number[]) => {
+    if (!(await confirmAction('Delete', ids.length > 1 ? `Delete ${ids.length} notifications?` : 'Delete this notification?', 'Delete', true))) return;
+    setItems((list) => list.filter((n) => !ids.includes(n.id)));
+    setSelectedIds([]);
+    setViewing(null);
+    try {
+      await deleteNotificationsApi(ids);
+    } catch (err) {
+      showMessage('Error', errorMessage(err));
+      load();
+    }
+  };
 
+  const markAll = async () => {
+    setItems((list) => list.map((n) => ({ ...n, isRead: true })));
+    try {
+      await markAllReadApi();
+    } catch {
+      load();
+    }
+  };
 
-    // Άνοιγμα Notification
-    const openNotification = (item: NotificationItem) => {
-        // Αν είμαστε σε selection mode, το click λειτουργεί ως select
-        if (selectedIds.length > 0) {
-            toggleSelection(item.id);
-            return;
-        }
-        // Σημείωση ως διαβασμένο όταν ανοίγει
-        const updated = notifications.map(n => n.id === item.id ? { ...n, isRead: true } : n);
-        setNotifications(updated);
-        
-        setViewingNotification(item);
-    };
+  const open = (item: NotificationItem) => {
+    if (selectedIds.length > 0) {
+      toggleSelection(item.id);
+      return;
+    }
+    if (!item.isRead) {
+      setItems((list) => list.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)));
+      markNotificationsApi([item.id], true).catch(() => {});
+    }
+    setViewing({ ...item, isRead: true });
+  };
 
-    // Διαγραφή notification (από το detail view)
-    const deleteSingle = () => {
-        if (!viewingNotification) return;
-        setNotifications(notifications.filter(n => n.id !== viewingNotification.id));
-        setViewingNotification(null); // Επιστροφή πίσω
-        setMenuVisible(false);
-    };
+  const unread = items.filter((n) => !n.isRead).length;
 
-    // 1. HEADER
-    const renderHeader = () => {
-        // A. Αν βλέπουμε λεπτομέρειες
-        if (viewingNotification) {
-            return (
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => { setViewingNotification(null); setMenuVisible(false); }}>
-                        <Ionicons name="arrow-back" size={24} color="#003366" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Λεπτομέρειες</Text>
-                    
-                    <View>
-                        <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
-                            <Ionicons name="ellipsis-vertical" size={24} color="#003366" />
-                        </TouchableOpacity>
-                        
-                        {/* Popup Menu για διαγραφή */}
-                        {menuVisible && (
-                            <View style={styles.popupMenu}>
-                                <TouchableOpacity style={styles.menuItem} onPress={deleteSingle}>
-                                    <Ionicons name="trash-outline" size={20} color="red" />
-                                    <Text style={[styles.menuText, { color: 'red' }]}>Διαγραφή</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-                    </View>
-                </View>
-            );
-        }
-
-        // B. Αν έχουμε επιλέξει αντικείμενα
-        if (selectedIds.length > 0) {
-            return (
-                <View style={[styles.header, { backgroundColor: '#e3f2fd' }]}>
-                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                        <TouchableOpacity onPress={() => setSelectedIds([])}>
-                            <Ionicons name="close" size={24} color="#003366" />
-                        </TouchableOpacity>
-                        <Text style={[styles.headerTitle, { marginLeft: 10 }]}>{selectedIds.length} Επιλέχθηκαν</Text>
-                    </View>
-                    <View style={styles.headerIcons}>
-                        <TouchableOpacity onPress={() => markAs(true)} style={styles.iconBtn}>
-                            <Ionicons name="mail-open-outline" size={22} color="#003366" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => markAs(false)} style={styles.iconBtn}>
-                            <Ionicons name="mail-outline" size={22} color="#003366" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={deleteSelected} style={styles.iconBtn}>
-                            <Ionicons name="trash-outline" size={22} color="red" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            );
-        }
-
-        // C. Κανονικό Header
-        return (
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#003366" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Ειδοποιήσεις</Text>
-                <View style={{ width: 24 }} /> 
-            </View>
-        );
-    };
-
+  // ---- Detail view ----
+  if (viewing) {
+    const ic = iconFor(viewing.subject);
     return (
-        <SafeAreaView style={styles.container}>
-            {renderHeader()}
-
-            {viewingNotification ? (
-                // --- DETAIL VIEW ---
-                <ScrollView style={styles.content}>
-                    <View style={styles.detailCard}>
-                        <View style={styles.detailHeader}>
-                            <Text style={styles.detailSubject}>{viewingNotification.subject}</Text>
-                            <View style={styles.dateRow}>
-                                <Ionicons name="calendar-outline" size={16} color="#666" />
-                                <Text style={styles.detailDate}>{viewingNotification.date} • {viewingNotification.time}</Text>
-                            </View>
-                        </View>
-                        
-                        <View style={styles.divider} />
-                        
-                        <Text style={styles.senderText}>Από: <Text style={{fontWeight: 'bold'}}>{viewingNotification.senderName}</Text></Text>
-                        
-                        <Text style={styles.detailDescription}>
-                            {viewingNotification.description}
-                        </Text>
-                    </View>
-                </ScrollView>
-            ) : (
-                // --- LIST VIEW ---
-                <ScrollView style={styles.content}>
-                    {notifications.length === 0 ? (
-                        <Text style={{textAlign: 'center', marginTop: 50, color: '#888'}}>Δεν υπάρχουν ειδοποιήσεις.</Text>
-                    ) : (
-                        notifications.map((item) => (
-                            <TouchableOpacity 
-                                key={item.id} 
-                                style={[
-                                    styles.notificationItem, 
-                                    selectedIds.includes(item.id) && styles.selectedItem,
-                                    !item.isRead && styles.unreadItem
-                                ]}
-                                onPress={() => openNotification(item)}
-                                onLongPress={() => toggleSelection(item.id)}
-                            >
-                                {/* Checkbox Area */}
-                                <TouchableOpacity onPress={() => toggleSelection(item.id)} style={styles.checkboxContainer}>
-                                    <Ionicons 
-                                        name={selectedIds.includes(item.id) ? "checkbox" : "square-outline"} 
-                                        size={24} 
-                                        color={selectedIds.includes(item.id) ? "#003366" : "#aaa"} 
-                                    />
-                                </TouchableOpacity>
-
-                                {/* Info Area */}
-                                <View style={styles.textContainer}>
-                                    <View style={styles.rowBetween}>
-                                        <Text style={[styles.subject, !item.isRead && styles.boldText]}>
-                                            {item.subject}
-                                        </Text>
-                                        <Text style={styles.dateText}>{item.date}</Text>
-                                    </View>
-                                    
-                                    <Text style={styles.description} numberOfLines={1}>
-                                        {item.description}
-                                    </Text>
-                                    <Text style={styles.timeText}>{item.time}</Text>
-                                </View>
-                            </TouchableOpacity>
-                        ))
-                    )}
-                </ScrollView>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Brand.background }} edges={['top']}>
+        <ScreenHeader
+          title="Notification"
+          onBack={() => setViewing(null)}
+          right={
+            <Pressable onPress={() => remove([viewing.id])} style={styles.headerIcon} hitSlop={8}>
+              <Ionicons name="trash-outline" size={21} color={Brand.danger} />
+            </Pressable>
+          }
+        />
+        <ScrollView contentContainerStyle={{ padding: 20 }}>
+          <View style={styles.detailCard}>
+            <View style={[styles.iconCircle, { backgroundColor: ic.bg, width: 56, height: 56, borderRadius: 28 }]}>
+              <Ionicons name={ic.icon} size={28} color={ic.color} />
+            </View>
+            <Text style={styles.detailSubject}>{viewing.subject}</Text>
+            <Text style={styles.detailMeta}>
+              From {viewing.senderName || 'TrailRiders'} · {timeAgo(viewing.createdAt)}
+            </Text>
+            <View style={styles.divider} />
+            <Text style={styles.detailText}>{viewing.description}</Text>
+            {!!(viewing.link || viewing.rideId) && (
+              <Button
+                title="Open"
+                icon="arrow-forward"
+                onPress={() => router.push((viewing.link || `/rideDetails/${viewing.rideId}`) as never)}
+                style={{ marginTop: 20 }}
+              />
             )}
-        </SafeAreaView>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     );
+  }
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: Brand.background }} edges={['top']}>
+      {selectedIds.length > 0 ? (
+        <View style={[styles.selHeader]}>
+          <Pressable onPress={() => setSelectedIds([])} hitSlop={8}>
+            <Ionicons name="close" size={24} color={Brand.navy} />
+          </Pressable>
+          <Text style={styles.selTitle}>{selectedIds.length} selected</Text>
+          <Pressable onPress={() => markAs(true)} style={styles.headerIcon} hitSlop={6}>
+            <Ionicons name="mail-open-outline" size={21} color={Brand.navy} />
+          </Pressable>
+          <Pressable onPress={() => markAs(false)} style={styles.headerIcon} hitSlop={6}>
+            <Ionicons name="mail-unread-outline" size={21} color={Brand.navy} />
+          </Pressable>
+          <Pressable onPress={() => remove(selectedIds)} style={styles.headerIcon} hitSlop={6}>
+            <Ionicons name="trash-outline" size={21} color={Brand.danger} />
+          </Pressable>
+        </View>
+      ) : (
+        <ScreenHeader
+          title="Notifications"
+          right={
+            unread > 0 ? (
+              <Pressable onPress={markAll} hitSlop={8}>
+                <Text style={styles.markAll}>Mark all read</Text>
+              </Pressable>
+            ) : undefined
+          }
+        />
+      )}
+
+      {loading ? (
+        <Loading />
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(n) => String(n.id)}
+          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Brand.primary} />}
+          ListHeaderComponent={
+            items.length > 0 ? (
+              <Text style={styles.hint}>
+                {unread > 0 ? `${unread} unread · ` : ''}Long-press to select
+              </Text>
+            ) : undefined
+          }
+          ListEmptyComponent={<EmptyState icon="notifications-off-outline" title="You're all caught up" message="When riders join your rides or comment, you'll see it here." />}
+          renderItem={({ item }) => {
+            const selected = selectedIds.includes(item.id);
+            const ic = iconFor(item.subject);
+            return (
+              <Pressable
+                onPress={() => open(item)}
+                onLongPress={() => toggleSelection(item.id)}
+                style={[styles.item, !item.isRead && styles.unread, selected && styles.selected]}
+              >
+                <Pressable onPress={() => toggleSelection(item.id)} hitSlop={6} style={{ marginRight: 12 }}>
+                  {selected ? (
+                    <View style={[styles.iconCircle, { backgroundColor: Brand.primary }]}>
+                      <Ionicons name="checkmark" size={22} color="#fff" />
+                    </View>
+                  ) : (
+                    <View style={[styles.iconCircle, { backgroundColor: ic.bg }]}>
+                      <Ionicons name={ic.icon} size={20} color={ic.color} />
+                    </View>
+                  )}
+                </Pressable>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.subject, !item.isRead && { fontWeight: '900' }]} numberOfLines={1}>
+                      {item.subject}
+                    </Text>
+                    <Text style={styles.time}>{timeAgo(item.createdAt)}</Text>
+                  </View>
+                  <Text style={styles.desc} numberOfLines={2}>
+                    {item.description}
+                  </Text>
+                </View>
+                {!item.isRead && <View style={styles.dot} />}
+              </Pressable>
+            );
+          }}
+        />
+      )}
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#f5f5f5" },
-    content: { flex: 1, padding: 16 },
-    
-    // Header Styles
-    header: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        backgroundColor: "#fff",
-        borderBottomWidth: 1,
-        borderBottomColor: "#eee",
-        height: 60,
-        zIndex: 10
-    },
-    headerTitle: { fontSize: 18, fontWeight: "bold", color: "#003366" },
-    headerIcons: { flexDirection: 'row' },
-    iconBtn: { marginLeft: 15 },
-    
-    // Popup Menu (3 dots)
-    popupMenu: {
-        position: 'absolute',
-        top: 30,
-        right: 0,
-        backgroundColor: 'white',
-        borderRadius: 8,
-        padding: 5,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-        width: 120,
-        zIndex: 20
-    },
-    menuItem: { flexDirection: 'row', alignItems: 'center', padding: 10 },
-    menuText: { marginLeft: 10, fontSize: 16 },
-
-    // List Item style
-    notificationItem: {
-        flexDirection: "row",
-        backgroundColor: "#fff",
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 10,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowRadius: 5,
-        elevation: 2,
-    },
-    selectedItem: { backgroundColor: "#e3f2fd", borderColor: "#2196f3", borderWidth: 1 },
-    unreadItem: { borderLeftWidth: 4, borderLeftColor: "#1DA1FA" },
-    
-    checkboxContainer: { paddingRight: 12 },
-    textContainer: { flex: 1 },
-    rowBetween: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-    
-    subject: { fontSize: 16, color: "#333", flex: 1 },
-    boldText: { fontWeight: "bold", color: "#000" },
-    dateText: { fontSize: 12, color: "#888" },
-    description: { fontSize: 14, color: "#666", marginBottom: 4 },
-    timeText: { fontSize: 10, color: "#aaa", textAlign: 'right' },
-
-    // Detail View style
-    detailCard: {
-        backgroundColor: 'white',
-        borderRadius: 16,
-        padding: 20,
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 5,
-    },
-    detailHeader: { marginBottom: 15 },
-    detailSubject: { fontSize: 22, fontWeight: 'bold', color: '#003366', marginBottom: 5 },
-    dateRow: { flexDirection: 'row', alignItems: 'center' },
-    detailDate: { marginLeft: 6, color: '#666', fontSize: 14 },
-    divider: { height: 1, backgroundColor: '#eee', marginVertical: 15 },
-    senderText: { fontSize: 16, color: '#444', marginBottom: 10 },
-    detailDescription: { fontSize: 16, lineHeight: 24, color: '#333' }
+  headerIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  selHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: Brand.primarySoft, gap: 4 },
+  selTitle: { flex: 1, fontSize: 17, fontWeight: '800', color: Brand.navy, marginLeft: 12 },
+  markAll: { color: Brand.primary, fontWeight: '700', fontSize: 13 },
+  hint: { color: Brand.faint, fontSize: 12, marginBottom: 10, marginLeft: 4 },
+  item: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: Radius.lg, padding: 14, marginBottom: 10, ...Shadow },
+  unread: { backgroundColor: '#F5FBFF', borderLeftWidth: 4, borderLeftColor: Brand.primary },
+  selected: { backgroundColor: Brand.primarySoft },
+  iconCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  subject: { flex: 1, fontSize: 15, fontWeight: '700', color: Brand.text },
+  time: { fontSize: 11, color: Brand.faint, marginLeft: 8 },
+  desc: { fontSize: 13, color: Brand.muted, marginTop: 3, lineHeight: 18 },
+  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: Brand.primary, marginLeft: 8 },
+  detailCard: { backgroundColor: '#fff', borderRadius: Radius.lg, padding: 20, ...Shadow },
+  detailSubject: { fontSize: 22, fontWeight: '900', color: Brand.text, marginTop: 14 },
+  detailMeta: { color: Brand.muted, fontSize: 13, marginTop: 4 },
+  divider: { height: 1, backgroundColor: Brand.border, marginVertical: 16 },
+  detailText: { fontSize: 15, lineHeight: 23, color: Brand.textSoft },
 });

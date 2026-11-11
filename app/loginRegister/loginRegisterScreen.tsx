@@ -1,95 +1,98 @@
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import Animated, { FadeIn, FadeInDown, FadeInLeft } from 'react-native-reanimated';
 import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Button } from '@/components/kit/button';
+import { GoogleButton } from '@/components/kit/google-button';
+import { Brand } from '@/constants/brand';
+
+const FEATURES: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
+  { icon: 'compass', text: 'Discover rides near you' },
+  { icon: 'people', text: 'Ride together with others' },
+  { icon: 'map', text: 'Plan routes and stops' },
+];
 
 export default function LoginRegisterScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.container}>
-      <StatusBar style={colorScheme === 'dark' ? 'dark' : 'light'}/>
-      
-      <View style={styles.banner}>
-        <Image source={require('@/images/logo.webp')} style={styles.logo} />
+    <LinearGradient colors={[Brand.navy, '#0A4F8F', Brand.primary]} style={[styles.container, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 24 }]}>
+      <StatusBar style="light" />
+
+      <Animated.View entering={FadeIn.duration(600)} style={styles.banner}>
+        <View style={styles.logoWrap}>
+          <Image source={require('@/images/logo.webp')} style={styles.logo} />
+        </View>
         <Text style={styles.appName}>Trail Riders</Text>
         <Text style={styles.slogan}>Your next ride is waiting — discover it, plan it, live it.</Text>
-      </View>
 
-      <View style={styles.buttons}>
-        <TouchableOpacity style={styles.loginBtn} onPress={() => router.push('/loginRegister/login')}>
-          <Text style={styles.loginText}>Login</Text>
-        </TouchableOpacity>
+        <View style={styles.features}>
+          {FEATURES.map((f, i) => (
+            <Animated.View key={f.text} entering={FadeInLeft.duration(400).delay(300 + i * 120)} style={styles.featureRow}>
+              <View style={styles.featureIcon}>
+                <Ionicons name={f.icon} size={16} color="#fff" />
+              </View>
+              <Text style={styles.featureText}>{f.text}</Text>
+            </Animated.View>
+          ))}
+        </View>
+      </Animated.View>
 
-        <TouchableOpacity style={styles.registerBtn} onPress={() => router.push('/loginRegister/register')}>
-          <Text style={styles.registerText}>Register</Text>
-        </TouchableOpacity>
+      <Animated.View entering={FadeInDown.duration(500).delay(200)} style={styles.buttons}>
+        <Button title="Login" onPress={() => router.push('/loginRegister/login')} style={styles.loginBtn} variant="ghost" />
+        <Button title="Create account" onPress={() => router.push('/loginRegister/register')} variant="outlineLight" style={styles.registerBtn} />
 
-        <Text style={styles.orText}>or</Text>
+        <View style={styles.orRow}>
+          <View style={styles.line} />
+          <Text style={styles.orText}>or</Text>
+          <View style={styles.line} />
+        </View>
 
-        {/* Continue with Google */}
-        <TouchableOpacity style={styles.googleBtn} onPress={() => console.log('Google Sign In')}>
-          <Image 
-            source={require('@/images/google-logo.png')} 
-            style={styles.googleLogo} 
-          />
-          <Text style={styles.googleText}>Continue with Google</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        <GoogleButton />
+      </Animated.View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'space-between', alignItems: 'center', padding: 24, backgroundColor: '#fff' },
-  banner: { alignItems: 'center', marginTop: 80 },
-  logo: { width: 120, height: 120, borderRadius: 60, marginBottom: 20 },
-  appName: { fontSize: 28, fontWeight: 'bold', color: '#000000ff' },
-  slogan: { fontSize: 13, color: '#666', textAlign: 'center', marginTop: 8 },
-  buttons: { width: '100%', marginBottom: "25%" },
-
-  loginBtn: {
-    backgroundColor: '#1DA1FA',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  loginText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-
-  registerBtn: {
-    borderColor: '#1DA1FA',
-    borderWidth: 2,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  registerText: { color: '#1DA1FA', fontSize: 16, fontWeight: '600' },
-  
-  orText: { color:'#000', alignItems: 'center', textAlign: 'center', paddingBlock: '2%', fontWeight: 'bold'},
-
-  googleBtn: {
-    flexDirection: 'row',
+  container: { flex: 1, justifyContent: 'space-between', paddingHorizontal: 24 },
+  banner: { alignItems: 'center', width: '100%', maxWidth: 480, alignSelf: 'center' },
+  logoWrap: {
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    borderColor: '#ddd',
-    borderWidth: 2,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    marginTop: '3%'
+    marginBottom: 20,
+    borderWidth: 6,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
-  googleLogo: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
+  logo: { width: 110, height: 110, borderRadius: 55 },
+  appName: { fontSize: 34, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  slogan: { fontSize: 15, color: '#DCEFFF', textAlign: 'center', marginTop: 8, lineHeight: 21, paddingHorizontal: 12 },
+  features: { marginTop: 28, alignSelf: 'stretch', paddingHorizontal: 20 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  featureIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  googleText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  featureText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  buttons: { width: '100%', maxWidth: 480, alignSelf: 'center' },
+  loginBtn: { backgroundColor: '#fff', marginBottom: 12 },
+  registerBtn: { borderColor: '#fff', marginBottom: 6 },
+  orRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 14 },
+  line: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.3)' },
+  orText: { color: '#DCEFFF', marginHorizontal: 12, fontWeight: '600' },
 });

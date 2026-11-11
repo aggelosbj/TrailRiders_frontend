@@ -1,195 +1,81 @@
-import { Ionicons } from '@expo/vector-icons'; // Import για το εικονίδιο
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { MotiView } from 'moti';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import React, { useState } from 'react';
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
-} from 'react-native';
-import { Easing } from 'react-native-reanimated';
-import { forgotPasswordApi } from "../../api/authApi";
+import { StyleSheet, Text, View } from 'react-native';
+
+import { forgotPasswordApi } from '@/api/authApi';
+import { errorMessage } from '@/api/client';
+import { AuthShell } from '@/components/kit/auth-shell';
+import { Button } from '@/components/kit/button';
+import { FormField } from '@/components/kit/form';
+import { Brand } from '@/constants/brand';
 
 export default function ForgotPassword() {
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [flag, setFlag] = useState(false); // Flag για την επιτυχία
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
   const handleForgot = async () => {
-    if (!email) {
-      return Alert.alert('Error', 'Please enter your email');
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError('Please enter a valid e-mail.');
+      return;
     }
-
+    setError(null);
+    setLoading(true);
     try {
-      const data = await forgotPasswordApi(email);
-      console.log("Email sent:", data);
-      
-      setFlag(true);
-
-      setTimeout(() => {
-        router.replace('/loginRegister/login');
-      }, 2500);
-
-    } catch (err: any) {
-      console.log("Forgot error:", err);
-
-      //DONT FORGET TO ADD CUSTOM ALLERT BOX
-      Alert.alert("Error", err.toString() || "Something went wrong");
+      await forgotPasswordApi(email.trim());
+      setSent(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Success Screen
-  if (flag) {
+  if (sent) {
     return (
-      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
-         <MotiView
-          from={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', damping: 15 }}
-        >
-          <Ionicons name="mail-open" size={100} color="#1DA1FA" />
-        </MotiView>
-        <Text style={{ marginTop: 20, fontSize: 20, fontWeight: 'bold', color: '#1DA1FA' }}>
-          Email Sent!
+      <View style={styles.success}>
+        <Animated.View entering={ZoomIn.springify().damping(15)}>
+          <View style={styles.mailCircle}>
+            <Ionicons name="mail-open" size={64} color={Brand.primary} />
+          </View>
+        </Animated.View>
+        <Text style={styles.successTitle}>Check your inbox</Text>
+        <Text style={styles.successText}>
+          We sent a password reset link to{'\n'}
+          <Text style={{ fontWeight: '800', color: Brand.text }}>{email.trim()}</Text>
+          {'\n'}The link expires in 15 minutes.
         </Text>
-        <Text style={{ marginTop: 10, color: '#666', textAlign: 'center', paddingHorizontal: 40 }}>
-          Please check your inbox for instructions to reset your password.
-        </Text>
+        <Button title="Back to login" onPress={() => router.replace('/loginRegister/login')} style={{ marginTop: 28, alignSelf: 'stretch' }} />
       </View>
     );
   }
 
-  // Κανονική Οθόνη
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        keyboardShouldPersistTaps="handled"
-      >
-        <MotiView
-          from={{ opacity: 0, translateY: 40 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 600, easing: Easing.out(Easing.ease) }}
-          style={styles.card}
-        >
-          <Text style={styles.title}>Forgot Password</Text>
-          <Text style={styles.subtitle}>
-            Enter your email and we'll send you a link to reset your password.
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            placeholderTextColor="#999"
-            autoCapitalize="none" // Σημαντικό για email
-          />
-
-          <TouchableOpacity style={styles.button} onPress={handleForgot}>
-            <Text style={styles.buttonText}>Send Reset Link</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.backContainer}
-            onPress={() => router.push('/loginRegister/login')}
-          >
-            <Text style={styles.backArrow}>⟵</Text>
-            <Text style={styles.backText}>Back to Login</Text>
-          </TouchableOpacity>
-        </MotiView>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    <AuthShell title="Forgot password?" subtitle="Enter your e-mail and we'll send you a link to reset your password.">
+      <FormField
+        label="E-mail"
+        icon="mail-outline"
+        placeholder="you@example.com"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        value={email}
+        onChangeText={setEmail}
+        onSubmitEditing={handleForgot}
+        error={error}
+      />
+      <Button title="Send reset link" onPress={handleForgot} loading={loading} icon="paper-plane-outline" />
+      <Button title="Back to login" variant="ghost" onPress={() => router.replace('/loginRegister/login')} style={{ marginTop: 8 }} />
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  card: {
-    width: '100%',
-    backgroundColor: 'white',
-    borderRadius: 16,
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 30,
-    lineHeight: 22,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#111827',
-    marginBottom: 20,
-    backgroundColor: '#f9fafb',
-  },
-  button: {
-    backgroundColor: '#1DA1FA', // Άλλαξα το χρώμα για να ταιριάζει με τα άλλα
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-  },
-  backArrow: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1DA1FA', // Και εδώ
-    marginRight: 8,
-    marginBottom: '2%'
-  },
-  backText: {
-    color: '#1DA1FA', // Και εδώ
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  success: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', padding: 28 },
+  mailCircle: { width: 130, height: 130, borderRadius: 65, backgroundColor: Brand.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  successTitle: { marginTop: 22, fontSize: 24, fontWeight: '900', color: Brand.navy },
+  successText: { marginTop: 10, fontSize: 15, color: Brand.muted, textAlign: 'center', lineHeight: 22 },
 });

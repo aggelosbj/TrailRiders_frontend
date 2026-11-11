@@ -1,144 +1,147 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { signupApi } from "../../api/authApi";
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { signupApi } from '@/api/authApi';
+import { errorMessage } from '@/api/client';
+import { AuthShell } from '@/components/kit/auth-shell';
+import { Button } from '@/components/kit/button';
+import { FormField } from '@/components/kit/form';
+import { Brand } from '@/constants/brand';
+import { useAuth } from '@/context/AuthContext';
+
+type Errors = Partial<Record<'name' | 'userName' | 'email' | 'password' | 'confirm', string>>;
 
 export default function Register() {
+  const router = useRouter();
+  const { login } = useAuth();
   const [name, setName] = useState('');
   const [userName, setUserName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [flag, setFlag] = useState(false);
-  const router = useRouter();
-  
+  const [errors, setErrors] = useState<Errors>({});
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const validate = () => {
+    const e: Errors = {};
+    const u = userName.trim();
+    if (!u) e.userName = 'Username is required';
+    else if (u.length < 3 || u.length > 12) e.userName = 'Username must be 3-12 characters';
+    else if (!/^[A-Za-z0-9_.]+$/.test(u)) e.userName = "Use only letters, numbers, '_' and '.'";
+    if (!email.trim()) e.email = 'E-mail is required';
+    else if (!/^\S+@\S+\.\S+$/.test(email.trim())) e.email = 'Please enter a valid e-mail';
+    else if (email.trim().length > 30) e.email = 'E-mail must be at most 30 characters';
+    if (password.length < 6) e.password = 'At least 6 characters';
+    if (confirmPassword !== password) e.confirm = 'Passwords do not match';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   const handleSignup = async () => {
-    // 1. Έλεγχος αν οι κωδικοί ταιριάζουν
-    if (password !== confirmPassword) {
-      
-      //DONT FORGET TO ADD CUSTOM ALLERT BOX
-      Alert.alert("Error", "Passwords do not match!");
-      return;
-    }
-
-    // 2. Έλεγχος αν τα πεδία είναι κενά
-    if (!userName || !password || !email) {
-      
-      //DONT FORGET TO ADD CUSTOM ALLERT BOX
-      Alert.alert("Error", "Please fill in all required fields.");
-      return;
-    }
-
+    setServerError(null);
+    if (!validate()) return;
+    setLoading(true);
     try {
-      // 3. Κλήση API (το name δεν το στέλνουμε στο API βάσει του αρχείου authApi που μου έδειξες)
-      const data = await signupApi(userName.trim(), password.trim(), email.trim());
-      console.log("Signup success:", data);
-      
-      // 4. Επιτυχία! Εμφανίζουμε το τικ
-      setFlag(true);
-
-      // 5. Περιμένουμε 1 δευτερόλεπτο και μετά αλλάζουμε οθόνη
-      setTimeout(() => {
-        router.replace('./login');
-      }, 1000);
-
-    } catch (err: any) {
-      console.log("Signup error:", err);
-      
-      //DONT FORGET TO ADD CUSTOM ALLERT BOX
-      Alert.alert("Registration Failed", err.toString());
+      await signupApi(userName.trim(), password, email.trim(), name.trim());
+      setDone(true);
+      // Log the new user in straight away
+      await login(userName.trim(), password);
+      setTimeout(() => router.replace('/(tabs)/home'), 900);
+    } catch (err) {
+      setDone(false);
+      setServerError(errorMessage(err, 'Registration failed.'));
+    } finally {
+      setLoading(false);
     }
   };
 
-
-  // Οθόνη Επιτυχίας
-  if (flag) {
+  if (done) {
     return (
-      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
-        {/* Χρησιμοποιούμε το ίδιο μπλε χρώμα (#1DA1FA) για ομοιομορφία με το Login */}
-        <Ionicons name="checkmark-circle" size={100} color="#1DA1FA" />
-        <Text style={{ marginTop: 20, fontSize: 20, fontWeight: 'bold', color: '#1DA1FA' }}>
-          Registration Successful!
-        </Text>
+      <View style={styles.success}>
+        <Animated.View entering={ZoomIn.springify().damping(12)}>
+          <Ionicons name="checkmark-circle" size={110} color={Brand.primary} />
+        </Animated.View>
+        <Text style={styles.successTitle}>Welcome aboard!</Text>
+        <Text style={styles.successText}>Your account has been created.</Text>
       </View>
     );
   }
 
-  // Κανονική Οθόνη Εγγραφής
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Create Account ✨</Text>
-      <Text style={styles.subtitle}>Register to get started</Text>
-
-      <TextInput
-        placeholder="Full Name"
-        placeholderTextColor="#aaa"
-        style={styles.input}
-        value={name}
-        onChangeText={setName}
-      />
-      <TextInput
-        placeholder="UserName"
-        placeholderTextColor="#aaa"
-        style={styles.input}
+    <AuthShell title="Create account ✨" subtitle="Join the community of riders and drivers.">
+      <FormField label="Full name" icon="id-card-outline" placeholder="e.g. Thanasis Papadopoulos" value={name} onChangeText={setName} />
+      <FormField
+        label="Username"
+        icon="at-outline"
+        placeholder="3-12 characters"
         value={userName}
         onChangeText={setUserName}
         autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={12}
+        error={errors.userName}
       />
-      <TextInput
-        placeholder="Email"
-        placeholderTextColor="#aaa"
-        style={styles.input}
+      <FormField
+        label="E-mail"
+        icon="mail-outline"
+        placeholder="you@example.com"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
+        maxLength={30}
+        error={errors.email}
       />
-      <TextInput
-        placeholder="Password"
-        placeholderTextColor="#aaa"
-        style={styles.input}
-        secureTextEntry
+      <FormField
+        label="Password"
+        icon="lock-closed-outline"
+        placeholder="At least 6 characters"
+        password
         value={password}
         onChangeText={setPassword}
+        error={errors.password}
       />
-      <TextInput
-        placeholder="Confirm Password"
-        placeholderTextColor="#aaa"
-        style={styles.input}
-        secureTextEntry
+      <FormField
+        label="Confirm password"
+        icon="lock-closed-outline"
+        placeholder="Repeat your password"
+        password
         value={confirmPassword}
         onChangeText={setConfirmPassword}
+        error={errors.confirm}
+        onSubmitEditing={handleSignup}
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleSignup}>
-        <Text style={styles.buttonText}>Register</Text>
-      </TouchableOpacity>
-    </View>
+      {serverError && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{serverError}</Text>
+        </View>
+      )}
+
+      <Button title="Create account" onPress={handleSignup} loading={loading} icon="person-add-outline" />
+
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>Already have an account? </Text>
+        <Pressable onPress={() => router.replace('/loginRegister/login')}>
+          <Text style={styles.link}>Log in</Text>
+        </Pressable>
+      </View>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 8, color: '#222' },
-  subtitle: { fontSize: 16, marginBottom: 24, color: '#666' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  button: {
-    backgroundColor: '#1DA1FA',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  link: { color: Brand.primary, fontWeight: '700', fontSize: 14 },
+  errorBox: { backgroundColor: Brand.dangerSoft, borderRadius: 10, padding: 12, marginBottom: 14 },
+  errorText: { color: Brand.danger, fontWeight: '600', fontSize: 13 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 22, flexWrap: 'wrap' },
+  footerText: { color: Brand.muted, fontSize: 14 },
+  success: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', padding: 24 },
+  successTitle: { marginTop: 18, fontSize: 24, fontWeight: '900', color: Brand.navy },
+  successText: { marginTop: 6, fontSize: 15, color: Brand.muted },
 });
